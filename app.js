@@ -462,6 +462,7 @@ function themaWechseln(thema) {
   document.querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', thema === 'hell' ? '#e8eaf0' : '#1a1f2e');
   try { localStorage.setItem('edulayer-thema', thema); } catch(_) {}
+  if (Z.geodreieckAktiv) geodreieckBildAktualisieren();
 }
 function themaLaden() {
   let t = 'dunkel';
@@ -1454,7 +1455,14 @@ function istOptischerModus() {
  *  Greift nicht, falls das SVG-Fallback aktiv ist (kein <img> mehr). */
 function geodreieckBildAktualisieren() {
   if (!D.geoBild || D.geoBild.tagName !== 'IMG') return;
-  const soll = istOptischerModus() ? KONFIGURATION.GEO_BILD_TAFEL : KONFIGURATION.GEO_BILD_PDF;
+  const tab = aktuellerTab();
+  const istTafel = !!tab && tab.type === 'tafel';
+  // Die dunkle, farbinvertierte Variante ergibt nur bei dunklem Tafel-
+  // Hintergrund Sinn. Im Hellmodus ist der Tafel-Hintergrund hell (siehe
+  // --tafel-bg-farbe), dann passt das normale Bild besser - genau wie
+  // bei PDF-Tabs, deren Seiten ohnehin immer hell sind.
+  const brauchtDunkleVariante = istTafel && Z.thema === 'dunkel';
+  const soll = brauchtDunkleVariante ? KONFIGURATION.GEO_BILD_TAFEL : KONFIGURATION.GEO_BILD_PDF;
   if (D.geoBild.dataset.aktuellesBild !== soll) {
     D.geoBild.src = soll;
     D.geoBild.dataset.aktuellesBild = soll;
