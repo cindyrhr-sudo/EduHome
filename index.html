@@ -475,7 +475,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           PDF speichern
         </button>
-        <p class="einstellungen-hinweis">Exportiert die annotierte PDF-Datei des aktiven PDF-Tabs. Nur verfügbar, wenn gerade ein PDF-Tab aktiv ist.</p>
       </div>
 
       <div class="einstellungen-abschnitt">
@@ -484,11 +483,11 @@
         <button id="btn-tafeln-export" class="einstellungen-btn">⬇️ Tafeln als Datei speichern</button>
         <button id="btn-tafeln-import" class="einstellungen-btn">⬆️ Tafel-Datei öffnen</button>
         <input type="file" id="tafeln-import-input" accept="application/json" style="display:none" />
-        <p class="einstellungen-hinweis">Betrifft alle Schultafel-Tabs gemeinsam (nicht die PDFs). Wird beim App-Start automatisch geladen, wenn lokal gespeichert.</p>
+      
       </div>
 
       <div class="einstellungen-abschnitt">
-        <h3 class="einstellungen-abschnitt-titel">Darstellung</h3>
+
         <div class="einstellungen-zeile">
           <span class="einstellungen-label">
             <svg viewBox="0 0 24 24" class="einstellungen-zeile-icon" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -532,7 +531,7 @@
       </div>
 
       <div class="einstellungen-abschnitt">
-        <h3 class="einstellungen-abschnitt-titel">Werkzeuge</h3>
+
         <div class="einstellungen-zeile einstellungen-zeile--spalte">
           <span class="einstellungen-label">Laser-Schweif Dauer</span>
           <div class="slider-zeile">
@@ -548,9 +547,8 @@
                    min="50" max="150" step="0.5" value="100"/>
             <span id="geo-kalibrierung-anzeige" class="slider-wert">100 %</span>
           </div>
-          <p class="einstellungen-hinweis">
-            Nur in PDF-Tabs wirksam. Geodreieck auf eine bekannte 1cm-Markierung
-            legen und mit einem echten Lineal vergleichen.
+      
+ 
           </p>
         </div>
         <div class="einstellungen-zeile einstellungen-zeile--spalte">
@@ -572,7 +570,7 @@
       </div>
 
       <div class="einstellungen-footer">
-        <span class="einstellungen-version">EduLayer + Board Fusion v1.0 – Lokal &amp; Datenschutz-konform</span>
+        <span class="einstellungen-version">EduLayer + Board Fusion – Lokal &amp; Datenschutz-konform</span>
       </div>
     </div>
   </div>
