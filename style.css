@@ -1,0 +1,1237 @@
+/*
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  EduLayer + Klassenzimmer-Board – Fusion  (Version 1.0)          ║
+  ╚══════════════════════════════════════════════════════════════════╝
+
+  Basis: EduLayer style.css v6.1 (Thema-Variablen, Sidebar, Flyouts,
+  Spotlight, Notizen, Einstellungen, Laser, Toast bleiben inhaltlich
+  fast unverändert). NEU hinzugefügt:
+   - Rechte Tab-Sidebar (.sidebar--tabs, .tab-liste, .tab-eintrag)
+   - Dialog "Neue Tafel anlegen" (.neue-tafel-panel)
+   - Schultafel-Ansicht (.tafel-wrapper, .tafel-canvas, .tafel-bg)
+   - Widgets + Kindergarten-Dock (aus Klassenzimmer-Board portiert,
+     auf EduLayer-Variablen umgestellt)
+
+  INHALTSVERZEICHNIS:
+   1.  Thema-Variablen
+   2.  Reset & Basis
+   3.  Layout
+   4.  Sidebar (links, Werkzeuge)
+   4b. Sidebar (rechts, Tabs + Kindergarten)   [NEU]
+   5.  Werkzeug-Buttons
+   6.  Farbpalette
+   7.  Flyout-Untermenüs
+   8.  Scroll-Modus
+   9.  Zoom-Wrapper & PDF
+  10.  Zoom-Steuerung
+  11.  Start-Anzeige
+  11b. Schultafel-Ansicht                      [NEU]
+  11c. Dialog "Neue Tafel"                     [NEU]
+  11d. Widgets & Kindergarten                  [NEU]
+  12.  Geodreieck
+  12b. Lineal
+  13.  Fokus-Toolbar
+  14.  Spotlight
+  15.  Notizen-Panel
+  16.  Einstellungsmenü
+  17.  Toggle & Segment
+  18.  Slider
+  19.  Laser-Canvas
+  20.  Toast & Lade
+  21.  Animationen
+  22.  Barrierefreiheit & Responsive
+*/
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   1. THEMA-VARIABLEN
+════════════════════════════════════════════════════════════════════ */
+:root,
+[data-thema="dunkel"] {
+  --app-bg:            #1a1f2e;
+  --seite-bg:          #12151e;
+  --sidebar-bg:        #0f1219;
+  --sidebar-rand:      #252d42;
+  --panel-bg:          #161b28;
+  --panel-rand:        #2a3252;
+  --akzent:            #4a8cf7;
+  --akzent-dunkel:     #2d6fd4;
+  --gefahr:            #e02020;
+  --text-1:            #e8ecf4;
+  --text-2:            #8a95b0;
+  --text-3:            #4e5875;
+  --btn-bg:            #1d2335;
+  --btn-bg-hover:      #28304d;
+  --btn-bg-aktiv:      #162d6a;
+  --btn-aktiv-farbe:   #4a8cf7;
+  --toggle-off:        #2d3450;
+  --toggle-on:         #4a8cf7;
+  --slider-track:      #2d3450;
+  --slider-thumb:      #4a8cf7;
+  --spotlight-dunkel:  rgba(0,0,0,0.76);
+  --griff-farbe:       rgba(255,255,255,0.92);
+  --griff-rand:        rgba(0,0,0,0.35);
+  --backdrop:          rgba(0,0,0,0.55);
+  --geo-fill:          rgba(100,200,255,0.09);
+  --geo-stroke:        rgba(100,200,255,0.70);
+  --geo-text:          rgba(160,220,255,0.90);
+  --geo-griff-bg:      rgba(20,30,60,0.95);
+  --flyout-bg:         #0f1219;
+  --flyout-rand:       #2a3252;
+  --notiz-bg:          #1a2038;
+  --textarea-bg:       #111827;
+  --vorlage-bg:        #1d2335;
+  --vorlage-bg-hover:  #28304d;
+  --tafel-bg-farbe:    #1e2740;
+}
+
+[data-thema="hell"] {
+  --app-bg:            #e8eaf0;
+  --seite-bg:          #d0d4de;
+  --sidebar-bg:        #f0f2f8;
+  --sidebar-rand:      #c8ccd8;
+  --panel-bg:          #ffffff;
+  --panel-rand:        #d0d4e0;
+  --akzent:            #1a5dc8;
+  --akzent-dunkel:     #0f3e8e;
+  --gefahr:            #c41c1c;
+  --text-1:            #0f1520;
+  --text-2:            #3a4460;
+  --text-3:            #7a84a0;
+  --btn-bg:            #e0e4f0;
+  --btn-bg-hover:      #ccd2e8;
+  --btn-bg-aktiv:      #b8c8f0;
+  --btn-aktiv-farbe:   #1a5dc8;
+  --toggle-off:        #b8bdd0;
+  --toggle-on:         #1a5dc8;
+  --slider-track:      #c0c6d8;
+  --slider-thumb:      #1a5dc8;
+  --spotlight-dunkel:  rgba(0,0,0,0.60);
+  --griff-farbe:       rgba(255,255,255,0.95);
+  --griff-rand:        rgba(0,0,0,0.25);
+  --backdrop:          rgba(0,0,0,0.35);
+  --geo-fill:          rgba(0,100,200,0.06);
+  --geo-stroke:        rgba(0,100,200,0.60);
+  --geo-text:          rgba(0,80,180,0.85);
+  --geo-griff-bg:      rgba(240,244,255,0.97);
+  --flyout-bg:         #f0f2f8;
+  --flyout-rand:       #c8ccd8;
+  --notiz-bg:          #f8f9ff;
+  --textarea-bg:       #ffffff;
+  --vorlage-bg:        #e8eaf4;
+  --vorlage-bg-hover:  #d8dcec;
+  --tafel-bg-farbe:    #eef1fa;
+}
+
+:root {
+  --sidebar-breite:  62px;
+  --btn-groesse:     46px;
+  --btn-radius:      10px;
+  --btn-icon:        20px;
+  --dot-groesse:     24px;
+  --gruppe-gap:      4px;
+  --gruppe-pad:      5px;
+  --griff-groesse:   22px;
+  --griff-radius:    4px;
+  --panel-breite:    320px;
+  --notiz-breite:    340px;
+  --flyout-breite:   72px;
+  --schrift: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --label-sz:        9px;
+  --t-schnell:       110ms ease;
+  --t-normal:        220ms ease;
+  --t-panel:         280ms cubic-bezier(0.32,0.72,0,1);
+  --tafel-raster:    30px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. RESET & BASIS
+════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+html { height: 100%; overflow: hidden; -webkit-user-select: none; user-select: none; }
+body {
+  font-family: var(--schrift);
+  background: var(--app-bg); color: var(--text-1);
+  height: 100dvh; width: 100dvw;
+  overflow: hidden; display: flex; position: fixed; inset: 0;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  transition: background var(--t-normal), color var(--t-normal);
+}
+button { font-family: inherit; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. LAYOUT
+════════════════════════════════════════════════════════════════════ */
+.hauptbereich {
+  flex: 1; min-width: 0; height: 100%;
+  overflow: hidden; position: relative;
+  background: var(--seite-bg);
+  transition: background var(--t-normal);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. SIDEBAR (links, Werkzeuge)
+════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  width: var(--sidebar-breite); min-width: var(--sidebar-breite);
+  height: 100%; background: var(--sidebar-bg);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 6px 0; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: none; scrollbar-width: none;
+  z-index: 100; flex-shrink: 0; touch-action: pan-y;
+  transition: background var(--t-normal);
+}
+.sidebar::-webkit-scrollbar { display: none; }
+
+[data-sidebar="right"] { flex-direction: row; }
+[data-sidebar="right"] .hauptbereich { order: 0; }
+[data-sidebar="right"] #sidebar {
+  order: 1; border-left: 1px solid var(--sidebar-rand);
+}
+[data-sidebar="left"]  { flex-direction: row; }
+[data-sidebar="left"]  .hauptbereich { order: 1; }
+[data-sidebar="left"]  #sidebar {
+  order: 0; border-right: 1px solid var(--sidebar-rand);
+}
+/* Die Tab-Sidebar liegt IMMER auf der jeweils anderen Seite als die
+   Werkzeug-Sidebar, damit beide sichtbar bleiben. */
+[data-sidebar="right"] #sidebar-tabs { order: 0; border-right: 1px solid var(--sidebar-rand); padding-left: env(safe-area-inset-left); }
+[data-sidebar="left"]  #sidebar-tabs { order: 1; border-left: 1px solid var(--sidebar-rand);  padding-right: env(safe-area-inset-right); }
+
+.sidebar-logo {
+  width: var(--btn-groesse); height: var(--btn-groesse);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 2px; flex-shrink: 0;
+}
+.logo-icon { font-size: 20px; }
+
+.werkzeug-gruppe {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--gruppe-gap); width: 100%;
+  padding: var(--gruppe-pad) 0;
+  border-bottom: 1px solid var(--sidebar-rand);
+  flex-shrink: 0;
+  position: relative;
+}
+.werkzeug-gruppe:last-of-type { border-bottom: none; }
+.werkzeug-gruppe--unten {
+  margin-top: auto;
+  border-top: 1px solid var(--sidebar-rand); border-bottom: none;
+  padding-bottom: 10px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   4b. SIDEBAR (rechts, Tabs + Kindergarten)                    [NEU]
+════════════════════════════════════════════════════════════════════ */
+.sidebar--tabs {
+  justify-content: flex-start;
+}
+.sidebar-trenner {
+  width: 70%; height: 1px; background: var(--sidebar-rand);
+  margin: 6px 0; flex-shrink: 0;
+}
+
+.tab-liste {
+  display: flex; flex-direction: column; gap: 5px;
+  width: 100%; align-items: center;
+  overflow-y: auto; overflow-x: hidden; touch-action: pan-y;
+  flex: 1 1 auto; min-height: 0; padding: 2px 4px;
+}
+.tab-liste::-webkit-scrollbar { display: none; }
+
+.tab-eintrag {
+  width: 100%; min-height: 52px; border-radius: 10px;
+  background: var(--btn-bg); border: 1.5px solid transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 6px 3px; cursor: pointer; position: relative;
+  touch-action: manipulation; flex-shrink: 0;
+  transition: background var(--t-schnell), border-color var(--t-schnell);
+}
+.tab-eintrag:hover { background: var(--btn-bg-hover); }
+.tab-eintrag.aktiv { background: var(--btn-bg-aktiv); border-color: var(--akzent); }
+.tab-eintrag-icon { font-size: 16px; line-height: 1; }
+.tab-eintrag-name {
+  font-size: 10px; font-weight: 600; color: var(--text-2);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; text-align: center;
+}
+.tab-eintrag.aktiv .tab-eintrag-name { color: var(--akzent-dunkel); }
+[data-thema="dunkel"] .tab-eintrag.aktiv .tab-eintrag-name { color: var(--btn-aktiv-farbe); }
+.tab-eintrag-schliessen {
+  position: absolute; top: -5px; right: -5px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--gefahr); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; touch-action: manipulation;
+}
+
+.werkzeug-btn--akzent { background: var(--akzent); color: #fff; }
+.werkzeug-btn--akzent:hover { background: var(--akzent-dunkel); color: #fff; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. WERKZEUG-BUTTONS
+════════════════════════════════════════════════════════════════════ */
+.werkzeug-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  width: var(--btn-groesse); height: var(--btn-groesse);
+  min-width: 44px; min-height: 44px;
+  border: none; border-radius: var(--btn-radius);
+  background: var(--btn-bg); color: var(--text-2);
+  cursor: pointer; flex-shrink: 0; touch-action: manipulation;
+  position: relative;
+  transition: background var(--t-schnell), color var(--t-schnell), transform var(--t-schnell);
+}
+.werkzeug-btn svg {
+  width: var(--btn-icon); height: var(--btn-icon);
+  fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0; pointer-events: none;
+}
+.btn-label {
+  font-size: var(--label-sz); font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  opacity: 0; transition: opacity var(--t-schnell);
+  pointer-events: none; line-height: 1;
+}
+
+.untermenu-indikator {
+  position: absolute; bottom: 3px; right: 4px;
+  font-size: 7px; color: var(--text-3);
+  line-height: 1; pointer-events: none;
+}
+
+.werkzeug-btn:hover                            { background: var(--btn-bg-hover); color: var(--text-1); }
+.werkzeug-btn:hover .btn-label                 { opacity: 1; }
+.werkzeug-btn.aktiv,
+.werkzeug-btn[aria-pressed="true"]             { background: var(--btn-bg-aktiv); color: var(--btn-aktiv-farbe); }
+.werkzeug-btn.aktiv .btn-label,
+.werkzeug-btn[aria-pressed="true"] .btn-label  { opacity: 1; }
+.werkzeug-btn:active                           { transform: scale(0.90); }
+.werkzeug-btn--gefahr       { color: var(--gefahr); }
+.werkzeug-btn--gefahr:hover { background: rgba(224,32,32,0.12); color: var(--gefahr); }
+.werkzeug-btn--sekundaer    { background: transparent; color: var(--text-3); }
+.werkzeug-btn.werkzeug-btn--deaktiviert { opacity: 0.32; pointer-events: none; }
+
+body.scroll-modus #btn-modus-wechsel {
+  background: rgba(232,106,16,0.18); color: #e86a10;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. FARBPALETTE
+════════════════════════════════════════════════════════════════════ */
+.farb-palette {
+  display: grid; grid-template-columns: repeat(2, var(--dot-groesse));
+  gap: 5px; padding: 2px 0;
+}
+.farb-dot {
+  width: var(--dot-groesse); height: var(--dot-groesse);
+  border-radius: 50%; border: 2px solid transparent;
+  cursor: pointer; touch-action: manipulation;
+  background-color: var(--dot-bg, #888);
+  transition: transform var(--t-schnell), border-color var(--t-schnell);
+}
+.farb-dot:hover { transform: scale(1.18); border-color: rgba(255,255,255,0.4); }
+.farb-dot.aktiv,
+.farb-dot[aria-pressed="true"] {
+  border-color: var(--text-1); transform: scale(1.12);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
+}
+.farb-dot--hell { border-color: var(--sidebar-rand); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   7. FLYOUT-UNTERMENÜS
+   Flyouts sind position:fixed (Safari/iOS overflow-Clipping-Bug bei
+   overflow-y:auto Elternelementen), JS berechnet die Koordinaten.
+════════════════════════════════════════════════════════════════════ */
+.untermenu-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+}
+
+.flyout {
+  position: fixed;
+  background: var(--flyout-bg);
+  border: 1px solid var(--flyout-rand);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 4px;
+  z-index: 800;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.3);
+  min-width: 68px;
+  top: 0; left: 0;
+  animation: flyout-ein 150ms ease forwards;
+}
+
+.flyout-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
+  width: 56px; min-height: 52px;
+  border: none; border-radius: 8px;
+  background: transparent; color: var(--text-2);
+  cursor: pointer; touch-action: manipulation;
+  padding: 6px 4px;
+  transition: background var(--t-schnell), color var(--t-schnell);
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  font-family: var(--schrift);
+}
+.flyout-btn svg {
+  width: 22px; height: 22px;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0; pointer-events: none;
+}
+.flyout-btn:hover  { background: var(--btn-bg-hover); color: var(--text-1); }
+.flyout-btn.aktiv,
+.flyout-btn[aria-pressed="true"] {
+  background: var(--btn-bg-aktiv); color: var(--btn-aktiv-farbe);
+}
+.flyout-btn:active { transform: scale(0.94); }
+
+@keyframes flyout-ein {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   8. SCROLL-MODUS
+════════════════════════════════════════════════════════════════════ */
+.zoom-wrapper {
+  width: 100%; height: 100%;
+  overflow: auto;
+  touch-action: none;
+  overscroll-behavior: none;
+  position: relative;
+}
+body.scroll-modus .zoom-wrapper {
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+body.scroll-modus .zeichen-canvas,
+body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   9. PDF-CONTAINER & SEITEN
+════════════════════════════════════════════════════════════════════ */
+.zoom-scaler {
+  transform-origin: top left;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 100%;
+  position: relative;
+}
+
+.pdf-container {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 20px;
+  padding: 20px 16px 60px;
+  width: max-content; min-width: 100%;
+}
+
+.seite-container {
+  position: relative; display: block; flex-shrink: 0;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.25);
+  border-radius: 2px; overflow: hidden;
+}
+.seite-container::before {
+  content: "Seite " attr(data-seite);
+  position: absolute; bottom: calc(100% + 5px); left: 0;
+  font-size: 11px; color: var(--text-3);
+  pointer-events: none; user-select: none;
+}
+
+.seite-container--platzhalter {
+  background: var(--panel-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.seite-platzhalter-label {
+  font-size: 13px; color: var(--text-3); font-weight: 500;
+}
+.pdf-canvas { display: block; position: relative; z-index: 1; }
+.zeichen-canvas {
+  position: absolute; inset: 0; z-index: 2;
+  cursor: crosshair; touch-action: none;
+}
+.zeichen-canvas[data-werkzeug="textmarker"] { cursor: text; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   10. ZOOM-STEUERUNG
+════════════════════════════════════════════════════════════════════ */
+.zoom-steuerung {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  background: var(--panel-bg); border: 1px solid var(--panel-rand);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-radius: 14px; padding: 6px 10px;
+  z-index: 200; touch-action: manipulation;
+  transition: background var(--t-normal);
+}
+.zoom-btn {
+  width: 36px; height: 36px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-1); font-size: 20px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  min-width: 36px; touch-action: manipulation;
+  transition: background var(--t-schnell);
+}
+.zoom-btn:hover  { background: var(--btn-bg-hover); }
+.zoom-btn:active { background: var(--btn-bg-aktiv); transform: scale(0.92); }
+.zoom-btn--reset { font-size: 16px; color: var(--text-2); }
+.zoom-anzeige {
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+  min-width: 44px; text-align: center;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   11. START-ANZEIGE
+════════════════════════════════════════════════════════════════════ */
+.start-anzeige {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; z-index: 10;
+}
+.start-anzeige__inhalt {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  max-width: 300px; text-align: center; padding: 36px 28px;
+  background: var(--panel-bg); border: 1px solid var(--panel-rand);
+  border-radius: 20px; transition: background var(--t-normal);
+}
+.start-anzeige__icon  { font-size: 52px; animation: schweben 3.2s ease-in-out infinite; }
+.start-anzeige__titel { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.start-anzeige__text  { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+.start-anzeige__btn {
+  margin-top: 6px; padding: 13px 28px;
+  background: var(--akzent); color: #fff;
+  border: none; border-radius: 12px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  min-height: 48px; touch-action: manipulation;
+  transition: background var(--t-schnell), transform var(--t-schnell);
+}
+.start-anzeige__btn:hover  { background: var(--akzent-dunkel); }
+.start-anzeige__btn:active { transform: scale(0.97); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   11b. SCHULTAFEL-ANSICHT                                       [NEU]
+   Analog zum PDF-Container, aber nur eine feste Zeichenfläche statt
+   mehrerer Seiten. Größe = kompletter sichtbarer Hauptbereich.
+════════════════════════════════════════════════════════════════════ */
+.tafel-wrapper {
+  position: absolute; inset: 0; overflow: hidden;
+  background: var(--tafel-bg-farbe);
+  transition: background var(--t-normal);
+}
+.tafel-bg {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background-size: var(--tafel-raster) var(--tafel-raster);
+}
+.tafel-bg.bg-kariert {
+  background-image:
+    linear-gradient(to right, rgba(120,140,190,0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(120,140,190,0.16) 1px, transparent 1px);
+}
+.tafel-bg.bg-liniert {
+  background-image: linear-gradient(to bottom, rgba(120,140,190,0.20) 1px, transparent 1px);
+  background-size: 100% var(--tafel-raster);
+}
+.tafel-canvas {
+  position: absolute; inset: 0; z-index: 2;
+  cursor: crosshair; touch-action: none;
+}
+.tafel-canvas[data-werkzeug="textmarker"] { cursor: text; }
+.tafel-widgets-layer {
+  position: absolute; inset: 0; z-index: 10;
+  pointer-events: none;
+}
+.tafel-widgets-layer > * { pointer-events: auto; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   11c. DIALOG "NEUE TAFEL"                                      [NEU]
+════════════════════════════════════════════════════════════════════ */
+.neue-tafel-panel {
+  position: relative; z-index: 1;
+  background: var(--panel-bg); border: 1px solid var(--panel-rand);
+  border-radius: 18px; padding: 22px; width: min(360px, 90vw);
+  margin: auto; box-shadow: 0 12px 44px rgba(0,0,0,0.4);
+  display: flex; flex-direction: column;
+}
+#neue-tafel-overlay { display: flex; align-items: center; justify-content: center; }
+.neue-tafel-option {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 14px; margin-bottom: 10px; border: 1.5px solid var(--panel-rand);
+  border-radius: 12px; background: var(--btn-bg); color: var(--text-1);
+  cursor: pointer; text-align: left; touch-action: manipulation;
+  transition: background var(--t-schnell), border-color var(--t-schnell);
+}
+.neue-tafel-option:hover { background: var(--btn-bg-hover); border-color: var(--akzent); }
+.neue-tafel-option-icon { font-size: 26px; flex-shrink: 0; }
+.neue-tafel-option strong { display: block; font-size: 15px; }
+.neue-tafel-option small { display: block; font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   11d. WIDGETS & KINDERGARTEN                                   [NEU]
+   Portiert aus Klassenzimmer-Board 4.3, auf EduLayer-Variablen und
+   -Radien umgestellt. Nur in Tafel-Tabs sichtbar/aktiv.
+════════════════════════════════════════════════════════════════════ */
+.kindergarten {
+  display: flex; flex-direction: column; gap: 6px; width: 100%;
+  align-items: center; overflow-y: auto; flex: 0 1 auto; min-height: 0;
+  touch-action: pan-y; padding: 4px; max-height: 40%;
+}
+.btn-parked {
+  background: var(--btn-bg); border: 2px solid var(--panel-rand); opacity: 0.5;
+  width: 38px; height: 38px; border-radius: 10px; font-size: 16px; position: relative;
+  color: var(--text-1); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; touch-action: manipulation; flex-shrink: 0;
+}
+.btn-parked.aktiv { border-color: var(--akzent); opacity: 1; box-shadow: 0 0 10px rgba(74,140,247,0.35); }
+.btn-parked.fullsize::after {
+  content: '⛶'; position: absolute; top: -6px; right: -6px; background: #e86a10; color: white;
+  border-radius: 50%; width: 16px; height: 16px; font-size: 10px; display: flex; align-items: center; justify-content: center;
+}
+
+.widget {
+  position: absolute; background: var(--w-bg); border-radius: 13px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5); display: flex; flex-direction: column;
+  border: 2px solid var(--w-border); min-width: 220px; min-height: 160px;
+  z-index: 10; overflow: hidden;
+}
+.widget.fullsize { top: 10px !important; left: 10px !important; width: calc(100% - 20px) !important; height: calc(100% - 20px) !important; z-index: 500 !important; }
+.widget.theme-sepia { --w-bg: #fdf6e3; --w-text: #5f4b32; --w-header: #d3cbb3; --w-border: #c4ba9f; }
+.widget.theme-dark { --w-bg: #0d1420; --w-text: #e0eee0; --w-header: #16233a; --w-border: #253355; }
+.widget-header {
+  background: var(--w-header); height: 38px; cursor: move; display: flex; justify-content: space-between;
+  align-items: center; padding: 0 10px; color: var(--w-text); font-size: 15px; flex-shrink: 0;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+.header-controls { display: flex; gap: 10px; align-items: center; }
+.header-icon { cursor: pointer; font-size: 16px; -webkit-touch-callout: none; }
+.widget-content { padding: 8px; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; color: var(--w-text); }
+.settings-panel {
+  display: none; background: rgba(0,0,0,0.12); padding: 6px; border-radius: 7px;
+  margin-bottom: 6px;
+}
+.widget.show-settings .settings-panel { display: flex; flex-direction: column; gap: 4px; }
+.widget select, .widget input[type=text], .ctrl-btn {
+  padding: 5px; cursor: pointer; border: 1px solid var(--panel-rand); border-radius: 6px;
+  background: var(--textarea-bg); color: var(--text-1); height: 30px; min-width: 30px; font-size: 12px;
+  font-family: var(--schrift);
+}
+.img-display { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+.timer-display { font-size: 56px; font-weight: bold; text-align: center; color: var(--w-text); margin: auto; -webkit-user-select: none; user-select: none; }
+.wheel-wrap { flex-grow: 1; display: flex; justify-content: center; align-items: center; min-height: 0; position: relative; overflow: hidden; }
+.wheel-canvas { width: auto; height: 90%; aspect-ratio: 1/1; max-width: 95%; object-fit: contain; transition: transform 4s cubic-bezier(0.15, 0, 0.15, 1); border-radius: 50%; }
+.winner-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 20; border-radius: 12px; color: #1a1f2e; gap: 10px; }
+.alarm-stop-btn { background: var(--gefahr) !important; color: white !important; font-weight: bold; display: none; animation: blinker 1s linear infinite; margin-top: 6px; width: 100%; }
+@keyframes blinker { 50% { opacity: 0; } }
+
+.widget-resizer {
+  position: absolute; right: 0; bottom: 0; width: 22px; height: 22px;
+  cursor: nwse-resize; z-index: 20; touch-action: none;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   12. GEODREIECK (PNG-Basis mit Plexiglas-Transparenz)
+   In PDF-Tabs real auf cm kalibriert; in Tafel-Tabs rein optisch
+   (Klasse .optisch-modus, siehe JS).
+════════════════════════════════════════════════════════════════════ */
+.geodreieck-wrapper {
+  position: absolute;
+  top: 100px;
+  left: 100px;
+  z-index: 300;
+  transform-origin: 50% 100%;
+  touch-action: none;
+  pointer-events: none;
+}
+.geodreieck-svg {
+  width: 560px;
+  height: 280px;
+  overflow: visible;
+  filter: drop-shadow(0 3px 12px rgba(0,0,0,0.3));
+  opacity: 0.78;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.geo-move-griff {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  border: 2px solid #333333;
+  color: #333333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  pointer-events: all;
+  touch-action: none;
+  top: 62%;
+  left: calc(50% - 20px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  z-index: 312;
+  opacity: 0.88;
+  transition: transform 80ms ease, opacity 120ms ease;
+}
+.geo-move-griff:hover  { opacity: 1; background: #ffffff; }
+.geo-move-griff:active { cursor: grabbing; transform: scale(0.93); opacity: 1; }
+.geo-move-griff svg {
+  width: 20px; height: 20px;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.geo-dreh-griff {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #333333;
+  color: #333333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  pointer-events: all;
+  touch-action: none;
+  top: -17px;
+  left: calc(50% - 17px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 310;
+  transition: transform 80ms ease;
+}
+.geo-dreh-griff:hover  { background: #f0f0f0; }
+.geo-dreh-griff:active {
+  cursor: grabbing;
+  transform: scale(0.95);
+}
+.geo-dreh-griff svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.geo-fuehrungslinie-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 305;
+}
+.geo-fuehrungslinie {
+  stroke: #ff9800;
+  stroke-width: 2;
+  stroke-dasharray: 6,4;
+  stroke-linecap: round;
+}
+
+/* Optischer Modus (Tafel-Tabs): kein Snap, kein Führungslinien-Anspruch
+   -> leicht reduzierte Deckkraft signalisiert "nur Orientierungshilfe" */
+.geodreieck-wrapper.optisch-modus .geodreieck-svg,
+.lineal-wrapper.optisch-modus .lineal-balken { opacity: 0.62; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   12b. LINEAL
+════════════════════════════════════════════════════════════════════ */
+.lineal-wrapper {
+  position: absolute;
+  top: 160px;
+  left: 80px;
+  z-index: 290;
+  transform-origin: 50% 50%;
+  touch-action: none;
+  pointer-events: none;
+}
+.lineal-balken {
+  position: relative;
+  height: 64px;
+  width: 560px;
+  background: rgba(255,255,255,0.55);
+  border: 1.5px solid rgba(40,40,40,0.65);
+  border-radius: 4px;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.lineal-skala {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.lineal-strich       { stroke: #222; stroke-linecap: round; }
+.lineal-strich--cm    { stroke-width: 1.4; }
+.lineal-strich--halb  { stroke-width: 1.0; }
+.lineal-strich--mm    { stroke-width: 0.6; }
+.lineal-zahl {
+  font-family: var(--schrift);
+  font-size: 11px;
+  font-weight: 600;
+  fill: #222;
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lineal-move-griff {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  border: 2px solid #333333;
+  color: #333333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  pointer-events: all;
+  touch-action: none;
+  top: calc(50% - 20px);
+  left: calc(50% - 20px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  z-index: 302;
+  opacity: 0.88;
+  transition: transform 80ms ease, opacity 120ms ease;
+}
+.lineal-move-griff:hover  { opacity: 1; background: #ffffff; }
+.lineal-move-griff:active { cursor: grabbing; transform: scale(0.93); opacity: 1; }
+.lineal-move-griff svg {
+  width: 20px; height: 20px;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.lineal-dreh-griff {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #333333;
+  color: #333333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  pointer-events: all;
+  touch-action: none;
+  top: calc(50% - 15px);
+  right: -38px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 303;
+  transition: transform 80ms ease;
+}
+.lineal-dreh-griff:hover  { background: #f0f0f0; }
+.lineal-dreh-griff:active { cursor: grabbing; transform: scale(0.95); }
+.lineal-dreh-griff svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   13. FOKUS-TOOLBAR
+════════════════════════════════════════════════════════════════════ */
+.fokus-toolbar {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-bg); border: 1px solid var(--panel-rand);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-radius: 12px; padding: 8px 14px;
+  z-index: 501; touch-action: manipulation;
+}
+.fokus-toolbar-label {
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+}
+.fokus-toolbar-btn {
+  background: transparent; border: none;
+  color: var(--text-2); font-size: 15px;
+  cursor: pointer; min-height: 30px; min-width: 30px;
+  border-radius: 6px;
+  touch-action: manipulation;
+  transition: background var(--t-schnell), color var(--t-schnell);
+}
+.fokus-toolbar-btn:hover { background: var(--btn-bg-hover); color: var(--text-1); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   14. SPOTLIGHT
+════════════════════════════════════════════════════════════════════ */
+.spotlight-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  pointer-events: none;
+}
+.spotlight-maske   {
+  position: absolute; inset: 0;
+  background: var(--spotlight-dunkel);
+  pointer-events: all;
+}
+.spotlight-fenster {
+  position: absolute; background: transparent; cursor: move;
+  overflow: visible; box-shadow: 0 0 0 1.5px rgba(255,255,255,0.22);
+  pointer-events: all;
+}
+.spotlight-fenster::after {
+  content: ''; position: absolute; inset: 0;
+  border: 1.5px dashed rgba(255,255,255,0.2); border-radius: inherit;
+  pointer-events: none;
+}
+.spotlight-fenster.oval { border-radius: 50%; }
+
+.spot-griff {
+  position: absolute;
+  width: var(--griff-groesse); height: var(--griff-groesse);
+  background: var(--griff-farbe); border: 2px solid var(--griff-rand);
+  border-radius: var(--griff-radius); touch-action: none; z-index: 10;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4); transition: transform 80ms ease;
+}
+.spot-griff:active { transform: scale(1.25) !important; }
+
+.spot-griff[data-griff="nw"] { top:0; left:0;    transform:translate(-50%,-50%); cursor:nw-resize; }
+.spot-griff[data-griff="n"]  { top:0; left:50%;  transform:translate(-50%,-50%); cursor:n-resize;  }
+.spot-griff[data-griff="ne"] { top:0; right:0;   transform:translate(50%,-50%);  cursor:ne-resize; }
+.spot-griff[data-griff="e"]  { top:50%; right:0; transform:translate(50%,-50%);  cursor:e-resize;  }
+.spot-griff[data-griff="se"] { bottom:0; right:0; transform:translate(50%,50%);  cursor:se-resize; }
+.spot-griff[data-griff="s"]  { bottom:0; left:50%; transform:translate(-50%,50%); cursor:s-resize; }
+.spot-griff[data-griff="sw"] { bottom:0; left:0;  transform:translate(-50%,50%); cursor:sw-resize; }
+.spot-griff[data-griff="w"]  { top:50%; left:0;  transform:translate(-50%,-50%); cursor:w-resize;  }
+
+.spot-griff[data-griff="nw"]:hover { transform:translate(-50%,-50%) scale(1.3); }
+.spot-griff[data-griff="n"]:hover  { transform:translate(-50%,-50%) scale(1.3); }
+.spot-griff[data-griff="ne"]:hover { transform:translate(50%,-50%)  scale(1.3); }
+.spot-griff[data-griff="e"]:hover  { transform:translate(50%,-50%)  scale(1.3); }
+.spot-griff[data-griff="se"]:hover { transform:translate(50%,50%)   scale(1.3); }
+.spot-griff[data-griff="s"]:hover  { transform:translate(-50%,50%)  scale(1.3); }
+.spot-griff[data-griff="sw"]:hover { transform:translate(-50%,50%)  scale(1.3); }
+.spot-griff[data-griff="w"]:hover  { transform:translate(-50%,-50%) scale(1.3); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   15. NOTIZEN-PANEL
+════════════════════════════════════════════════════════════════════ */
+.notizen-overlay { position: fixed; inset: 0; z-index: 600; pointer-events: all; }
+.notizen-backdrop {
+  position: absolute; inset: 0; background: var(--backdrop);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: backdrop-ein 250ms ease forwards;
+}
+.notizen-panel {
+  position: absolute; top: 0; bottom: 0;
+  width: var(--notiz-breite); max-width: 92vw;
+  background: var(--panel-bg);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: -8px 0 32px rgba(0,0,0,0.3);
+  animation: panel-ein-rechts var(--t-panel) forwards;
+  transition: background var(--t-normal);
+  right: 0; border-left: 1px solid var(--panel-rand);
+}
+
+.notizen-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 12px; border-bottom: 1px solid var(--panel-rand);
+  flex-shrink: 0; gap: 8px;
+}
+.notizen-titel {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 16px; font-weight: 700; color: var(--text-1);
+}
+.notizen-titel-icon {
+  width: 18px; height: 18px; fill: none; stroke: var(--akzent);
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
+}
+.notizen-header-actions { display: flex; align-items: center; gap: 8px; }
+.notizen-seite-info {
+  font-size: 12px; font-weight: 600; color: var(--text-3);
+  background: var(--btn-bg); padding: 3px 8px; border-radius: 6px;
+}
+
+.notizen-nav {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 8px 16px; border-bottom: 1px solid var(--panel-rand); flex-shrink: 0;
+}
+.notizen-nav-btn {
+  width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: var(--btn-bg); color: var(--text-1); font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; transition: background var(--t-schnell);
+}
+.notizen-nav-btn:hover  { background: var(--btn-bg-hover); }
+.notizen-nav-info { font-size: 13px; font-weight: 500; color: var(--text-2); min-width: 80px; text-align: center; }
+
+.notizen-inhalt { flex: 1; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; }
+.notizen-textarea {
+  flex: 1; width: 100%;
+  background: var(--textarea-bg); border: 1px solid var(--panel-rand);
+  border-radius: 10px; color: var(--text-1);
+  font-family: var(--schrift); font-size: 14px; line-height: 1.65;
+  padding: 12px 14px; resize: none; outline: none;
+  -webkit-user-select: text; user-select: text; touch-action: auto;
+  transition: border-color var(--t-schnell), background var(--t-normal);
+}
+.notizen-textarea:focus { border-color: var(--akzent); box-shadow: 0 0 0 2px rgba(74,140,247,0.2); }
+.notizen-textarea::placeholder { color: var(--text-3); }
+
+.notizen-vorlagen { padding: 8px 16px 10px; border-top: 1px solid var(--panel-rand); flex-shrink: 0; }
+.notizen-vorlagen-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3); display: block; margin-bottom: 6px;
+}
+.notizen-vorlagen-liste { display: flex; gap: 6px; flex-wrap: wrap; }
+.notiz-vorlage-btn {
+  padding: 5px 10px; background: var(--vorlage-bg);
+  border: 1px solid var(--panel-rand); border-radius: 8px;
+  color: var(--text-2); font-size: 12px; font-weight: 500;
+  cursor: pointer; touch-action: manipulation;
+  transition: background var(--t-schnell), color var(--t-schnell);
+}
+.notiz-vorlage-btn:hover  { background: var(--vorlage-bg-hover); color: var(--text-1); }
+.notiz-vorlage-btn:active { transform: scale(0.95); }
+
+.notizen-footer {
+  display: flex; gap: 8px; padding: 10px 16px 14px;
+  border-top: 1px solid var(--panel-rand); flex-shrink: 0;
+}
+.notizen-footer-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 8px; background: var(--btn-bg); border: none; border-radius: 10px;
+  color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer;
+  touch-action: manipulation; transition: background var(--t-schnell), color var(--t-schnell);
+}
+.notizen-footer-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.notizen-footer-btn:hover { background: var(--btn-bg-hover); color: var(--text-1); }
+.notizen-footer-btn--gefahr { color: var(--gefahr); }
+.notizen-footer-btn--gefahr:hover { background: rgba(224,32,32,0.12); }
+
+.einstellungen-schliessen {
+  width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: var(--btn-bg); color: var(--text-2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; flex-shrink: 0;
+  transition: background var(--t-schnell), color var(--t-schnell);
+}
+.einstellungen-schliessen svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.einstellungen-schliessen:hover { background: var(--btn-bg-hover); color: var(--text-1); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   16. EINSTELLUNGSMENÜ
+════════════════════════════════════════════════════════════════════ */
+.einstellungen-overlay { position: fixed; inset: 0; z-index: 610; pointer-events: all; }
+.einstellungen-backdrop {
+  position: absolute; inset: 0; background: var(--backdrop);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: backdrop-ein 250ms ease forwards;
+}
+.einstellungen-panel {
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: var(--panel-breite); max-width: 90vw;
+  background: var(--panel-bg); border-left: 1px solid var(--panel-rand);
+  display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: none; touch-action: pan-y;
+  box-shadow: -8px 0 32px rgba(0,0,0,0.3);
+  animation: panel-ein-rechts var(--t-panel) forwards;
+  transition: background var(--t-normal);
+}
+
+.einstellungen-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 20px 16px; border-bottom: 1px solid var(--panel-rand); flex-shrink: 0;
+}
+.einstellungen-titel { font-size: 18px; font-weight: 700; color: var(--text-1); }
+.einstellungen-abschnitt {
+  padding: 16px 20px; border-bottom: 1px solid var(--panel-rand);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.einstellungen-abschnitt-titel {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 2px;
+}
+.einstellungen-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 12px 14px; border: none; border-radius: 10px;
+  background: var(--btn-bg); color: var(--text-1); font-size: 14px; font-weight: 500;
+  cursor: pointer; touch-action: manipulation; text-align: left;
+  transition: background var(--t-schnell);
+}
+.einstellungen-btn svg { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.einstellungen-btn:hover { background: var(--btn-bg-hover); }
+.einstellungen-btn--primary { background: rgba(74,140,247,0.12); color: var(--akzent); }
+.einstellungen-btn--primary:hover { background: rgba(74,140,247,0.22); }
+[data-thema="hell"] .einstellungen-btn--primary { background: rgba(26,93,200,0.10); }
+
+.einstellungen-zeile {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; min-height: 40px;
+}
+.einstellungen-zeile--spalte { flex-direction: column; align-items: flex-start; }
+.einstellungen-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 500; color: var(--text-1); flex-shrink: 0;
+}
+.einstellungen-zeile-icon {
+  width: 16px; height: 16px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  color: var(--text-2); flex-shrink: 0;
+}
+.einstellungen-hinweis { font-size: 13px; color: var(--text-3); line-height: 1.5; }
+.einstellungen-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--panel-rand); }
+.einstellungen-version { font-size: 11px; color: var(--text-3); }
+
+.bg-type-row { display: flex; gap: 8px; width: 100%; }
+.settings-row {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 6px; background: var(--btn-bg); color: var(--text-1); border: none;
+  border-radius: 8px; padding: 9px 10px; font-size: 13px; cursor: pointer;
+  touch-action: manipulation;
+}
+.settings-row.bg-type-btn.mode-active { background: var(--btn-bg-aktiv); color: var(--btn-aktiv-farbe); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   17. TOGGLE & SEGMENT
+════════════════════════════════════════════════════════════════════ */
+.toggle-btn {
+  position: relative; width: 46px; height: 26px; border: none;
+  border-radius: 13px; background: var(--toggle-off); cursor: pointer;
+  flex-shrink: 0; touch-action: manipulation;
+  transition: background var(--t-normal); padding: 0;
+}
+.toggle-btn[aria-checked="true"] { background: var(--toggle-on); }
+.toggle-btn__schieber {
+  position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  transition: transform var(--t-normal);
+}
+.toggle-btn[aria-checked="true"] .toggle-btn__schieber { transform: translateX(20px); }
+
+.segment-control {
+  display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--panel-rand);
+}
+.segment-btn {
+  padding: 6px 12px; border: none; background: transparent;
+  color: var(--text-2); font-size: 13px; font-weight: 500;
+  cursor: pointer; touch-action: manipulation;
+  transition: background var(--t-schnell), color var(--t-schnell);
+}
+.segment-btn + .segment-btn { border-left: 1px solid var(--panel-rand); }
+.segment-btn:hover  { background: var(--btn-bg-hover); color: var(--text-1); }
+.segment-btn.aktiv  { background: var(--btn-bg-aktiv); color: var(--btn-aktiv-farbe); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   18. SLIDER
+════════════════════════════════════════════════════════════════════ */
+.slider-zeile { display: flex; align-items: center; gap: 10px; width: 100%; }
+.einstellungen-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 2px;
+  background: var(--slider-track); outline: none; cursor: pointer;
+}
+.einstellungen-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--slider-thumb);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer;
+}
+.slider-wert { font-size: 12px; font-weight: 600; color: var(--text-2); min-width: 46px; text-align: right; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   19. LASER-CANVAS
+════════════════════════════════════════════════════════════════════ */
+.laser-canvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 450; pointer-events: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   20. TOAST & LADE
+════════════════════════════════════════════════════════════════════ */
+.toast {
+  position: fixed; bottom: 76px; left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--panel-bg); border: 1px solid var(--panel-rand);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-radius: 12px; color: var(--text-1); font-size: 13px; font-weight: 500;
+  padding: 10px 18px; z-index: 1000; pointer-events: none;
+  white-space: nowrap; opacity: 0; max-width: 75vw;
+  overflow: hidden; text-overflow: ellipsis;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.toast.sichtbar { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.erfolg   { border-color: rgba(30,138,60,0.6); }
+.toast.fehler   { border-color: rgba(224,32,32,0.6); }
+.toast.info     { border-color: var(--akzent); }
+
+.lade-overlay {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(8,10,18,0.80); backdrop-filter: blur(6px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+.lade-spinner {
+  width: 46px; height: 46px;
+  border: 3px solid rgba(74,140,247,0.2); border-top-color: var(--akzent);
+  border-radius: 50%; animation: drehen 0.75s linear infinite;
+}
+.lade-text { font-size: 13px; color: var(--text-2); font-weight: 500; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   21. ANIMATIONEN
+════════════════════════════════════════════════════════════════════ */
+@keyframes drehen    { to { transform: rotate(360deg); } }
+@keyframes schweben  { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+@keyframes backdrop-ein { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panel-ein-rechts { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes panel-ein-links  { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   22. BARRIEREFREIHEIT & RESPONSIVE
+════════════════════════════════════════════════════════════════════ */
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+@media (max-height: 480px) {
+  :root {
+    --sidebar-breite: 50px; --btn-groesse: 38px; --btn-icon: 16px;
+    --dot-groesse: 20px; --gruppe-pad: 3px; --gruppe-gap: 2px;
+    --panel-breite: 260px; --notiz-breite: 280px;
+  }
+  .btn-label { display: none; }
+  .sidebar-logo { display: none; }
+  .zoom-steuerung { bottom: 8px; }
+}
