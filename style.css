@@ -71,7 +71,7 @@
   --spotlight-dunkel:  rgba(0,0,0,0.76);
   --griff-farbe:       rgba(255,255,255,0.92);
   --griff-rand:        rgba(0,0,0,0.35);
-  --backdrop:          rgba(0,0,0,0.55);
+  --backdrop:          rgba(0,0,0,0.15);
   --geo-fill:          rgba(100,200,255,0.09);
   --geo-stroke:        rgba(100,200,255,0.70);
   --geo-text:          rgba(160,220,255,0.90);
@@ -109,7 +109,7 @@
   --spotlight-dunkel:  rgba(0,0,0,0.60);
   --griff-farbe:       rgba(255,255,255,0.95);
   --griff-rand:        rgba(0,0,0,0.25);
-  --backdrop:          rgba(0,0,0,0.35);
+  --backdrop:          rgba(0,0,0,0.10);
   --geo-fill:          rgba(0,100,200,0.06);
   --geo-stroke:        rgba(0,100,200,0.60);
   --geo-text:          rgba(0,80,180,0.85);
@@ -945,7 +945,6 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
 .notizen-overlay { position: fixed; inset: 0; z-index: 600; pointer-events: all; }
 .notizen-backdrop {
   position: absolute; inset: 0; background: var(--backdrop);
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   animation: backdrop-ein 250ms ease forwards;
 }
 .notizen-panel {
@@ -1052,7 +1051,6 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
 .einstellungen-overlay { position: fixed; inset: 0; z-index: 610; pointer-events: all; }
 .einstellungen-backdrop {
   position: absolute; inset: 0; background: var(--backdrop);
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   animation: backdrop-ein 250ms ease forwards;
 }
 .einstellungen-panel {
