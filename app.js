@@ -42,7 +42,7 @@
  * 18.  TAFEL-TAB (Canvas, Hintergrund)             [NEU]
  * 19.  PDF-TAB (Laden, Rendern, Lazy, Export)
  * 20.  WIDGETS (portiert aus Klassenzimmer-Board)  [NEU]
- * 21.  SITZUNG SPEICHERN / LADEN (alle Tabs)       [NEU]
+ * 21.  TAFELN SPEICHERN / LADEN                     [NEU]
  * 22.  SERVICE WORKER
  * 23.  APP-START
  */
@@ -69,6 +69,11 @@ const KONFIGURATION = {
   GEO_SEITENVERHAELTNIS: 0.5,
   GEO_CM_LAENGE:     28,
   GEO_SNAP_PX:       20,
+  // Zwei Bildvarianten: PDF-Tabs (heller Hintergrund) nutzen das
+  // normale Geodreieck, Tafel-Tabs (dunkler Hintergrund) die
+  // farbinvertierte Variante.
+  GEO_BILD_PDF:      'icons/geodreieck.png',
+  GEO_BILD_TAFEL:    'icons/geodreieck-dark.png',
 
   // Optischer px-pro-cm-Wert für Tafel-Tabs (kein realer Kalibrierungs-
   // Anspruch, dient nur als angenehme Bildschirm-Näherung - identisch
@@ -187,7 +192,6 @@ const D = {
   tafelCanvas:       document.getElementById('tafel-canvas'),
   tafelWidgetsLayer: document.getElementById('tafel-widgets-layer'),
 
-  btnDateiLaden:     document.getElementById('btn-datei-laden'),
   dateiInput:        document.getElementById('datei-input'),
 
   gruppeScroll:      document.getElementById('gruppe-scroll'),
@@ -261,10 +265,10 @@ const D = {
   einstellungenBackdrop: document.getElementById('einstellungen-backdrop'),
   btnEinstellungenSch:   document.getElementById('btn-einstellungen-schliessen'),
   btnSpeichern:          document.getElementById('btn-speichern'),
-  btnSitzungSpeichern:   document.getElementById('btn-sitzung-speichern'),
-  btnSitzungExport:      document.getElementById('btn-sitzung-export'),
-  btnSitzungImport:      document.getElementById('btn-sitzung-import'),
-  sitzungImportInput:    document.getElementById('sitzung-import-input'),
+  btnTafelnSpeichern:    document.getElementById('btn-tafeln-speichern'),
+  btnTafelnExport:       document.getElementById('btn-tafeln-export'),
+  btnTafelnImport:       document.getElementById('btn-tafeln-import'),
+  tafelnImportInput:     document.getElementById('tafeln-import-input'),
   btnThemaWechsel:       document.getElementById('btn-thema-wechsel'),
   btnSidebarLinks:       document.getElementById('btn-sidebar-links'),
   btnSidebarRechts:      document.getElementById('btn-sidebar-rechts'),
@@ -756,12 +760,12 @@ function einstellungenInit() {
     if (!tab || tab.type !== 'pdf') { toast('Nur in PDF-Tabs möglich.', 'info'); return; }
     einstellungenSchliessen(); pdfSpeichern();
   });
-  D.btnSitzungSpeichern.addEventListener('click', () => { sitzungSpeichern(); });
-  D.btnSitzungExport.addEventListener('click', () => { sitzungExportieren(); });
-  D.btnSitzungImport.addEventListener('click', () => { D.sitzungImportInput.click(); });
-  D.sitzungImportInput.addEventListener('change', e => {
+  D.btnTafelnSpeichern.addEventListener('click', () => { tafelnSpeichern(); });
+  D.btnTafelnExport.addEventListener('click', () => { tafelnExportieren(); });
+  D.btnTafelnImport.addEventListener('click', () => { D.tafelnImportInput.click(); });
+  D.tafelnImportInput.addEventListener('change', e => {
     const f = e.target.files[0];
-    if (f) sitzungImportieren(f);
+    if (f) tafelnImportieren(f);
     e.target.value = '';
   });
   D.btnThemaWechsel.addEventListener('click', () =>
@@ -976,7 +980,8 @@ function werkzeugSidebarAnpassen() {
 }
 
 function sidebarInit() {
-  D.btnDateiLaden.addEventListener('click', () => { D.dateiInput.click(); });
+  // "PDF laden" läuft jetzt ausschließlich über den "+"-Dialog
+  // (rechte Sidebar), der denselben datei-input auslöst.
   D.btnStartNeu.addEventListener('click', neueTafelOeffnen);
 
   D.dateiInput.addEventListener('change', e => {
@@ -1423,6 +1428,18 @@ function istOptischerModus() {
   return !tab || tab.type !== 'pdf';
 }
 
+/** Wechselt zwischen der hellen (PDF-Tabs) und der dunklen,
+ *  farbinvertierten Variante (Tafel-Tabs) des Geodreieck-Bilds.
+ *  Greift nicht, falls das SVG-Fallback aktiv ist (kein <img> mehr). */
+function geodreieckBildAktualisieren() {
+  if (!D.geoBild || D.geoBild.tagName !== 'IMG') return;
+  const soll = istOptischerModus() ? KONFIGURATION.GEO_BILD_TAFEL : KONFIGURATION.GEO_BILD_PDF;
+  if (D.geoBild.dataset.aktuellesBild !== soll) {
+    D.geoBild.src = soll;
+    D.geoBild.dataset.aktuellesBild = soll;
+  }
+}
+
 function geodreieckAn() {
   Z.geodreieckAktiv = true;
   D.geoWrapper.style.display = 'block';
@@ -1445,6 +1462,7 @@ function geodreieckAus() {
 function geodreieckUmschalten() { Z.geodreieckAktiv ? geodreieckAus() : geodreieckAn(); }
 
 function geodreieckSkalieren() {
+  geodreieckBildAktualisieren();
   const pxProCm = aktuellePxProCm();
   const breite  = KONFIGURATION.GEO_CM_LAENGE * pxProCm * aktuellerZoomFaktor() * Z.geoKalibrierung;
   const hoehe   = breite * KONFIGURATION.GEO_SEITENVERHAELTNIS;
@@ -2649,101 +2667,126 @@ function widgetWinnerSchliessen(id) { const el = document.getElementById('winner
 
 
 /* ===================================================================
-   21. SITZUNG SPEICHERN / LADEN (alle Tabs)                     [NEU]
-   Persistiert das komplette Tab-Set (inkl. Tinte als Punktdaten und
-   PDF-Bytes als Base64) in localStorage bzw. als JSON-Datei.
+   21. TAFELN SPEICHERN / LADEN                                  [NEU]
+   -------------------------------------------------------------------
+   Bewusst getrennt von den PDF-Tabs, genau wie in den beiden
+   Ursprungs-Programmen:
+    - PDF-Tabs verhalten sich wie im ursprünglichen EduLayer: keine
+      automatische Zwischenspeicherung, nur expliziter Vektor-Export
+      der annotierten PDF-Datei (siehe pdfSpeichern() weiter oben).
+      Schließt man die App ohne Export, ist die PDF-Annotation weg -
+      das war im Original genauso.
+    - Alle Tafel-Tabs zusammen verhalten sich wie Klassenzimmer-Board:
+      automatisches Laden beim Start, manueller "Lokal speichern"-
+      Button, sowie Datei-Export/Import als ein gemeinsames JSON-
+      Dokument (mehrere Tafeln = mehrere "Seiten" wie im Original).
+      PDF-Tabs bleiben davon komplett unberührt.
 ==================================================================== */
-const SITZUNG_STORAGE_KEY = 'edulayer-sitzung-v1';
+const TAFELN_STORAGE_KEY = 'edulayer-tafeln-v1';
 
-function bytesZuBase64(bytes) {
-  let bin = ''; const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  return btoa(bin);
-}
-function base64ZuBytes(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+/** Sichert - falls gerade eine Tafel aktiv ist - deren Live-DOM-Stand
+ *  (Widgets etc.) ins Tab-Objekt, damit gatherState auch den aktuell
+ *  offenen Tab korrekt erfasst (alle anderen Tafel-Tabs sind bereits
+ *  beim letzten Tab-Wechsel synchronisiert worden). */
+function alleTafelnSynchronisieren() {
+  const tab = aktuellerTab();
+  if (tab && tab.type === 'tafel') tafelStatusSichern(tab);
 }
 
-function tabSerialisieren(tab) {
-  if (tab.type === 'tafel') {
-    if (tab.id === Z.aktiverTabId) tafelStatusSichern(tab);
-    return {
-      type: 'tafel', name: tab.name, groesse: tab.groesse,
-      annotationen: tab.annotationen, widgets: tab.widgets, notiz: tab.notiz, bgTyp: tab.bgTyp,
-    };
-  }
+function tafelnGesamtDokument() {
+  alleTafelnSynchronisieren();
+  const tafeln = Z.tabs.filter(t => t.type === 'tafel');
   return {
-    type: 'pdf', name: tab.name,
-    pdfBytesB64: tab.pdfBytes ? bytesZuBase64(tab.pdfBytes) : null,
-    seitenAnzahl: tab.seitenAnzahl, aktiveSeite: tab.aktiveSeite,
-    annotationen: tab.annotationen, notizenProSeite: tab.notizenProSeite, zoom: tab.zoom,
+    tafeln: tafeln.map(t => ({
+      id: t.id, name: t.name, groesse: t.groesse,
+      annotationen: t.annotationen, widgets: t.widgets, notiz: t.notiz, bgTyp: t.bgTyp,
+    })),
+    gespeichertAm: new Date().toISOString(),
   };
 }
-function tabDeserialisieren(data) {
-  if (data.type === 'tafel') {
+
+function tafelnAusDatenErzeugen(doc) {
+  const liste = (doc.tafeln || []).map(data => {
     const tab = tabErzeugenTafel(data.name);
+    if (data.id) tab.id = data.id;
     tab.groesse = data.groesse || null;
     tab.annotationen = data.annotationen || { 1: [] };
     tab.widgets = data.widgets || [];
     tab.notiz = data.notiz || '';
     tab.bgTyp = data.bgTyp || 'none';
     return tab;
-  }
-  const tab = tabErzeugenPdf(data.name);
-  tab.pdfBytes = data.pdfBytesB64 ? base64ZuBytes(data.pdfBytesB64) : null;
-  tab.seitenAnzahl = data.seitenAnzahl || 0;
-  tab.aktiveSeite = data.aktiveSeite || 1;
-  tab.annotationen = data.annotationen || {};
-  tab.notizenProSeite = data.notizenProSeite || {};
-  tab.zoom = data.zoom || 1.0;
-  return tab;
+  });
+  return liste.length ? liste : [tabErzeugenTafel()];
 }
 
-function sitzungGesamtDokument() {
-  return { tabs: Z.tabs.map(tabSerialisieren), aktiverIndex: Z.tabs.findIndex(t => t.id === Z.aktiverTabId), gespeichertAm: new Date().toISOString() };
-}
-
-function sitzungSpeichern() {
+function tafelnSpeichern() {
   try {
-    localStorage.setItem(SITZUNG_STORAGE_KEY, JSON.stringify(sitzungGesamtDokument()));
-    toast('Sitzung lokal gespeichert.', 'erfolg');
+    localStorage.setItem(TAFELN_STORAGE_KEY, JSON.stringify(tafelnGesamtDokument()));
+    toast('Tafeln lokal gespeichert.', 'erfolg');
   } catch (e) {
     toast('Speichern fehlgeschlagen (evtl. zu wenig Speicherplatz): ' + e.message, 'fehler', 4000);
   }
 }
 
-function sitzungExportieren() {
-  const doc = sitzungGesamtDokument();
+function tafelnExportieren() {
+  const doc = tafelnGesamtDokument();
   const blob = new Blob([JSON.stringify(doc)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `edulayer-sitzung-${zeitstempel()}.json`;
+  a.href = url; a.download = `tafeln-${zeitstempel()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
 
-function sitzungImportieren(datei) {
+function tafelnImportieren(datei) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
       const parsed = JSON.parse(e.target.result);
-      if (!window.confirm('Aktuelle Tabs werden ersetzt. Fortfahren?')) return;
-      sitzungWiederherstellen(parsed);
+      if (window.confirm('Aktuelle Tafeln vorher als Datei sichern?\n\n„OK" = Ja, zuerst sichern\n„Abbrechen" = Nein, direkt ersetzen')) {
+        tafelnExportieren();
+      }
+      tafelnErsetzen(tafelnAusDatenErzeugen(parsed));
+      toast('Tafeln geladen.', 'erfolg');
     } catch (err) { toast('Öffnen fehlgeschlagen: ungültige Datei.', 'fehler'); }
   };
   reader.readAsText(datei);
 }
 
-function sitzungWiederherstellen(doc) {
-  tabAbbauen(Z.aktiverTabId);
-  Z.tabs = (doc.tabs || []).map(tabDeserialisieren);
-  if (Z.tabs.length === 0) Z.tabs = [tabErzeugenTafel()];
-  Z.aktiverTabId = null;
-  const idx = Math.max(0, Math.min(doc.aktiverIndex ?? 0, Z.tabs.length - 1));
-  tabAktivieren(Z.tabs[idx].id);
+/** Ersetzt ausschließlich die Tafel-Tabs im Tab-Array; PDF-Tabs
+ *  bleiben unverändert erhalten und aktiv, falls einer offen war. */
+function tafelnErsetzen(neueTafeln) {
+  const aktiverTab = aktuellerTab();
+  const aktivWarTafel = aktiverTab && aktiverTab.type === 'tafel';
+  if (aktivWarTafel) tabAbbauen(Z.aktiverTabId);
+
+  const pdfTabs = Z.tabs.filter(t => t.type === 'pdf');
+  Z.tabs = [...neueTafeln, ...pdfTabs];
+
+  if (aktivWarTafel || !aktiverTab) {
+    Z.aktiverTabId = null;
+    tabAktivieren(neueTafeln[0].id);
+  } else {
+    tabsRendern();
+  }
+}
+
+/** Wird beim App-Start aufgerufen: lädt gespeicherte Tafeln (falls
+ *  vorhanden) direkt ins Tab-Array, OHNE sie zu aktivieren - die
+ *  eigentliche Aktivierung übernimmt appStart() im Anschluss. */
+function tafelnAutoLaden() {
+  try {
+    const raw = localStorage.getItem(TAFELN_STORAGE_KEY);
+    if (!raw) return false;
+    const doc = JSON.parse(raw);
+    const tafeln = tafelnAusDatenErzeugen(doc);
+    if (!tafeln.length) return false;
+    Z.tabs.push(...tafeln);
+    return true;
+  } catch (e) {
+    console.error('[EduLayer] Tafeln laden fehlgeschlagen:', e);
+    return false;
+  }
 }
 
 
@@ -2800,16 +2843,14 @@ function appStart() {
 
   swRegistrieren();
 
-  // Sitzung aus letzter Session laden, sonst mit einer leeren Tafel starten
-  let geladen = false;
-  try {
-    const raw = localStorage.getItem(SITZUNG_STORAGE_KEY);
-    if (raw) { sitzungWiederherstellen(JSON.parse(raw)); geladen = true; }
-  } catch (e) { console.error('[EduLayer] Sitzung laden fehlgeschlagen:', e); }
-  if (!geladen) {
-    const tab = tabErzeugenTafel();
-    tabHinzufuegen(tab, true);
-  }
+  // Gespeicherte Tafeln automatisch laden (wie Klassenzimmer-Board);
+  // PDF-Tabs werden bewusst NICHT automatisch wiederhergestellt (wie
+  // im ursprünglichen EduLayer) - PDFs müssen pro Sitzung neu geöffnet
+  // und bei Bedarf explizit exportiert werden.
+  const tafelnGeladen = tafelnAutoLaden();
+  if (!tafelnGeladen) Z.tabs.push(tabErzeugenTafel());
+  tabsRendern();
+  tabAktivieren(Z.tabs[0].id);
 
   // Drag & Drop von PDFs direkt auf die Fläche -> neuer PDF-Tab
   document.addEventListener('dragover', e => e.preventDefault());
