@@ -122,6 +122,8 @@ const Z = {
   strichbreite:    KONFIGURATION.STIFT_DUENN_PX,
   linienstil:      'solid',
   zeichnet:        false,
+  aktiverPointerId: null,
+  nurStiftZeichnet: true,
   letzterPunkt:    null,
   letzterPunktGegl: null,
   aktuellerStrich: null,
@@ -271,6 +273,7 @@ const D = {
   btnTafelnImport:       document.getElementById('btn-tafeln-import'),
   tafelnImportInput:     document.getElementById('tafeln-import-input'),
   btnThemaWechsel:       document.getElementById('btn-thema-wechsel'),
+  btnStiftExklusiv:      document.getElementById('btn-stift-exklusiv'),
   btnSidebarLinks:       document.getElementById('btn-sidebar-links'),
   btnSidebarRechts:      document.getElementById('btn-sidebar-rechts'),
   sliderLaserDauer:      document.getElementById('slider-laser-dauer'),
@@ -540,6 +543,24 @@ function tafelRasterLaden() {
   tafelRasterSetzen(px);
 }
 
+/** Handballenschutz: wenn aktiv, zeichnen nur Stift (pointerType 'pen')
+ *  und Maus ('mouse') - Finger-/Handballenberührungen ('touch') werden
+ *  beim Zeichnen ignoriert. Werkzeuge wie Lineal/Geodreieck/Widgets
+ *  lassen sich davon unabhängig weiterhin mit dem Finger bedienen. */
+function stiftExklusivSetzen(aktiv) {
+  Z.nurStiftZeichnet = aktiv;
+  if (D.btnStiftExklusiv) D.btnStiftExklusiv.setAttribute('aria-checked', aktiv ? 'true' : 'false');
+  try { localStorage.setItem('edulayer-stift-exklusiv', aktiv ? '1' : '0'); } catch(_) {}
+}
+function stiftExklusivLaden() {
+  let aktiv = true;
+  try {
+    const gespeichert = localStorage.getItem('edulayer-stift-exklusiv');
+    if (gespeichert !== null) aktiv = gespeichert === '1';
+  } catch(_) {}
+  stiftExklusivSetzen(aktiv);
+}
+
 
 /* ===================================================================
    6. FLYOUT-UNTERMENÜS
@@ -788,6 +809,7 @@ function einstellungenInit() {
   D.btnThemaWechsel.addEventListener('click', () =>
     themaWechseln(Z.thema === 'dunkel' ? 'hell' : 'dunkel')
   );
+  D.btnStiftExklusiv.addEventListener('click', () => stiftExklusivSetzen(!Z.nurStiftZeichnet));
   D.btnSidebarLinks.addEventListener('click',  () => sidebarPositionSetzen('left'));
   D.btnSidebarRechts.addEventListener('click', () => sidebarPositionSetzen('right'));
   D.sliderLaserDauer.addEventListener('input', () => {
@@ -1126,12 +1148,15 @@ function vorschauBasisWiederherstellen(ctx, canvas, basis) {
 function strichStarten(e, canvas) {
   const tab = aktuellerTab(); if (!tab) return;
   if (Z.modus === 'scrollen') return;
-  if (e.touches?.length > 1)  return;
   if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') return;
   if (Z.fokusModus === 'laser') { laserStarten(e); return; }
+  if (Z.zeichnet) return; // schon eine aktive Berührung (Stift/Finger) - weitere ignorieren
+  if (Z.nurStiftZeichnet && e.pointerType === 'touch') return; // Handballenschutz: nur Stift/Maus zeichnet
 
   e.preventDefault();
   Z.zeichnet = true;
+  Z.aktiverPointerId = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   Z.letzterPunktGegl = null;
 
   let p = koordinaten(e, canvas);
@@ -1179,11 +1204,7 @@ function strichStarten(e, canvas) {
 function strichBewegen(e, canvas) {
   if (Z.modus === 'scrollen') return;
   if (Z.fokusModus === 'laser') { laserBewegen(e); return; }
-  if (e.touches?.length === 2) {
-    if (Z.zeichnet) { Z.zeichnet = false; Z.aktuellerStrich = null; }
-    pinchBewegen(e); return;
-  }
-  if (!Z.zeichnet) return;
+  if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
   e.preventDefault();
 
   let p = koordinaten(e, canvas);
@@ -1225,10 +1246,12 @@ function strichBewegen(e, canvas) {
 
 function strichBeenden(e, canvas) {
   if (Z.fokusModus === 'laser') { laserBeenden(); return; }
-  if (!Z.zeichnet) return;
+  if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
   const tab = aktuellerTab(); if (!tab) return;
   e.preventDefault();
   Z.zeichnet = false;
+  Z.aktiverPointerId = null;
+  try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
 
   if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
     let pEnd = koordinaten(e, canvas);
@@ -1270,14 +1293,10 @@ function strichBeenden(e, canvas) {
 }
 
 function zeichenListeners(canvas) {
-  canvas.addEventListener('touchstart',  e => strichStarten(e, canvas), { passive: false });
-  canvas.addEventListener('touchmove',   e => strichBewegen(e, canvas), { passive: false });
-  canvas.addEventListener('touchend',    e => strichBeenden(e, canvas), { passive: false });
-  canvas.addEventListener('touchcancel', e => strichBeenden(e, canvas), { passive: false });
-  canvas.addEventListener('mousedown',   e => strichStarten(e, canvas));
-  canvas.addEventListener('mousemove',   e => strichBewegen(e, canvas));
-  canvas.addEventListener('mouseup',     e => strichBeenden(e, canvas));
-  canvas.addEventListener('mouseleave',  e => { if (Z.zeichnet) strichBeenden(e, canvas); });
+  canvas.addEventListener('pointerdown',   e => strichStarten(e, canvas));
+  canvas.addEventListener('pointermove',   e => strichBewegen(e, canvas));
+  canvas.addEventListener('pointerup',     e => strichBeenden(e, canvas));
+  canvas.addEventListener('pointercancel', e => strichBeenden(e, canvas));
 }
 
 function stricheZeichnen(ctx, striche) {
@@ -1920,7 +1939,13 @@ function zoomInit() {
   D.btnZoomReset.addEventListener('click', () => zoomSetzen(1.0));
 
   D.zoomWrapper.addEventListener('touchstart', e => {
-    if (e.touches.length===2) Z.pinch=null;
+    if (e.touches.length===2) {
+      Z.pinch = null;
+      if (Z.zeichnet) {
+        Z.zeichnet = false; Z.aktuellerStrich = null; Z.aktiverPointerId = null;
+        Z.geradeLinieStart = null; Z.geradeLinieBasis = null; Z.letzterPunkt = null;
+      }
+    }
   }, { passive: false });
   D.zoomWrapper.addEventListener('touchmove', e => {
     if (e.touches.length===2&&Z.modus==='zeichnen') { e.preventDefault(); pinchBewegen(e); }
@@ -2885,6 +2910,7 @@ function appStart() {
   linealEinstellungenLaden();
   tafelBgLaden();
   tafelRasterLaden();
+  stiftExklusivLaden();
   sidebarPositionLaden();
 
   sidebarInit();
