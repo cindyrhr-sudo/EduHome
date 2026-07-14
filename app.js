@@ -54,9 +54,9 @@
    1. KONFIGURATION
 ==================================================================== */
 const KONFIGURATION = {
-  STIFT_DUENN_PX:    2,
-  STIFT_DICK_PX:     6,
-  GERADE_LINIE_PX:   2,
+  STIFT_DUENN_PX:    4,
+  STIFT_DICK_PX:     8,
+  GERADE_LINIE_PX:   4,
   TEXTMARKER_PX:     18,
   TEXTMARKER_ALPHA:  0.32,
   LASER_PX:          6,
