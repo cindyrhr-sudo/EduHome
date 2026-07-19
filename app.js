@@ -1150,8 +1150,18 @@ function strichStarten(e, canvas) {
   if (Z.modus === 'scrollen') return;
   if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') return;
   if (Z.fokusModus === 'laser') { laserStarten(e); return; }
-  if (Z.zeichnet) return; // schon eine aktive Berührung (Stift/Finger) - weitere ignorieren
   if (Z.nurStiftZeichnet && e.pointerType === 'touch') return; // Handballenschutz: nur Stift/Maus zeichnet
+
+  if (Z.zeichnet) {
+    // Derselbe Kontakt meldet sich nochmal (z.B. doppeltes pointerdown)
+    // -> ignorieren. Meldet sich ein ANDERER Kontakt, während Z.zeichnet
+    // noch aktiv ist, wurde der vorige Strich offenbar ohne sauberes
+    // pointerup/pointercancel beendet (bekannt bei sehr schnellem
+    // Absetzen/Neuansetzen des Apple Pencil) - dann jetzt erzwungen sauber
+    // abschließen, statt den neuen Aufsatzpunkt zu verschlucken.
+    if (e.pointerId === Z.aktiverPointerId) return;
+    strichAbschliessen(canvas);
+  }
 
   e.preventDefault();
   Z.zeichnet = true;
@@ -1244,52 +1254,68 @@ function strichBewegen(e, canvas) {
   Z.letzterPunkt = p;
 }
 
+/** Schließt den aktuell offenen Strich ab und speichert ihn in die
+ *  Annotationen. endPunkt ist optional - fehlt er (z.B. beim
+ *  erzwungenen Abschluss ohne aktuelles Pointer-Event), wird der
+ *  zuletzt bekannte Punkt verwendet. Zentral ausgelagert, damit sowohl
+ *  das normale pointerup/pointercancel als auch alle Sicherheitsnetze
+ *  (lostpointercapture, erzwungener Neustart bei hängendem Zustand)
+ *  exakt denselben, korrekten Abschluss durchlaufen. */
+function strichAbschliessen(canvas, endPunkt) {
+  const tab = aktuellerTab();
+  if (tab) {
+    if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
+      const pEnd = endPunkt || Z.letzterPunkt || Z.geradeLinieStart;
+      const seite = seiteVonCanvas(canvas);
+      const ctx = canvas.getContext('2d');
+      if (Z.geradeLinieBasis) vorschauBasisWiederherstellen(ctx, canvas, Z.geradeLinieBasis);
+      geradeLinieZeichnen(ctx, Z.geradeLinieStart, pEnd, Z.strichfarbe, Z.strichbreite, Z.linienstil);
+      if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
+      tab.annotationen[seite].push({
+        werkzeug: 'gerade-linie',
+        punkte: [Z.geradeLinieStart, pEnd],
+        farbe: Z.strichfarbe,
+        breite: Z.strichbreite,
+        linienstil: Z.linienstil,
+      });
+    } else if (Z.werkzeug === 'textmarker' && Z.aktuellerStrich?.offCanvas) {
+      const seite = seiteVonCanvas(canvas);
+      if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
+      tab.annotationen[seite].push({
+        punkte: Z.aktuellerStrich.punkte,
+        farbe: Z.aktuellerStrich.farbe,
+        breite: Z.aktuellerStrich.breite,
+        werkzeug: 'textmarker',
+        alpha: Z.aktuellerStrich.alpha,
+      });
+      canvasNeuZeichnen(seite);
+    } else if (Z.aktuellerStrich) {
+      const seite = seiteVonCanvas(canvas);
+      if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
+      tab.annotationen[seite].push(Z.aktuellerStrich);
+    }
+  }
+  try { if (Z.aktiverPointerId !== null) canvas.releasePointerCapture(Z.aktiverPointerId); } catch (_) {}
+  Z.zeichnet = false;
+  Z.aktiverPointerId = null;
+  Z.aktuellerStrich = null;
+  Z.geradeLinieStart = null;
+  Z.geradeLinieBasis = null;
+  Z.letzterPunkt = null;
+  Z.letzterPunktGegl = null;
+}
+
 function strichBeenden(e, canvas) {
   if (Z.fokusModus === 'laser') { laserBeenden(); return; }
   if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
-  const tab = aktuellerTab(); if (!tab) return;
   e.preventDefault();
-  Z.zeichnet = false;
-  Z.aktiverPointerId = null;
-  try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
 
+  let pEnd = null;
   if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
-    let pEnd = koordinaten(e, canvas);
+    pEnd = koordinaten(e, canvas);
     pEnd = linealUndGeoSnap(e, canvas, pEnd);
-    const ctx = canvas.getContext('2d');
-    const seite = seiteVonCanvas(canvas);
-    geradeLinieZeichnen(ctx, Z.geradeLinieStart, pEnd, Z.strichfarbe, Z.strichbreite, Z.linienstil);
-    if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-    tab.annotationen[seite].push({
-      werkzeug: 'gerade-linie',
-      punkte: [Z.geradeLinieStart, pEnd],
-      farbe: Z.strichfarbe,
-      breite: Z.strichbreite,
-      linienstil: Z.linienstil,
-    });
-    Z.geradeLinieStart = null;
-    Z.geradeLinieBasis = null;
-    Z.letzterPunkt = null;
-    return;
   }
-
-  if (Z.werkzeug === 'textmarker' && Z.aktuellerStrich?.offCanvas) {
-    const seite = seiteVonCanvas(canvas);
-    if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-    tab.annotationen[seite].push({
-      punkte: Z.aktuellerStrich.punkte,
-      farbe: Z.aktuellerStrich.farbe,
-      breite: Z.aktuellerStrich.breite,
-      werkzeug: 'textmarker',
-      alpha: Z.aktuellerStrich.alpha,
-    });
-    canvasNeuZeichnen(seite);
-  } else if (Z.aktuellerStrich) {
-    const seite = seiteVonCanvas(canvas);
-    if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-    tab.annotationen[seite].push(Z.aktuellerStrich);
-  }
-  Z.aktuellerStrich = null; Z.letzterPunkt = null;
+  strichAbschliessen(canvas, pEnd);
 }
 
 function zeichenListeners(canvas) {
@@ -1297,6 +1323,15 @@ function zeichenListeners(canvas) {
   canvas.addEventListener('pointermove',   e => strichBewegen(e, canvas));
   canvas.addEventListener('pointerup',     e => strichBeenden(e, canvas));
   canvas.addEventListener('pointercancel', e => strichBeenden(e, canvas));
+  // Sicherheitsnetz: lostpointercapture feuert zuverlässig, sobald der
+  // Kontakt endet - auch wenn pointerup/pointercancel vom System
+  // verschluckt werden (bekanntes Verhalten bei sehr schnellem Absetzen
+  // des Apple Pencil unter Safari/iPadOS). Verhindert, dass Z.zeichnet
+  // dauerhaft "hängen" bleibt und der nächste Strich stillschweigend
+  // ignoriert wird.
+  canvas.addEventListener('lostpointercapture', e => {
+    if (e.pointerId === Z.aktiverPointerId) strichAbschliessen(canvas);
+  });
 }
 
 function stricheZeichnen(ctx, striche) {
