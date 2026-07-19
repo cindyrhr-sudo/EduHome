@@ -1214,6 +1214,24 @@ function strichStarten(e, canvas) {
 function strichBewegen(e, canvas) {
   if (Z.modus === 'scrollen') return;
   if (Z.fokusModus === 'laser') { laserBewegen(e); return; }
+
+  // Selbstheilung: pointerdown wurde von WebKit nicht ausgeliefert (bekannter
+  // Sonderfall bei sehr schnellem Neuaufsetzen, besonders bei Stiften wie dem
+  // Logitech Crayon, die nicht das native Apple-Pencil-Protokoll nutzen).
+  // pointermove kommt aber mit aktivem Kontakt (buttons/pressure > 0) an -
+  // in dem Fall den Strich hier nachträglich starten, statt auf ein
+  // pointerdown zu warten, das u.U. nie kommt.
+  if (!Z.zeichnet && e.pointerId !== Z.aktiverPointerId) {
+    const kontaktAktiv = e.buttons > 0 || (e.pressure && e.pressure > 0);
+    const werkzeugErlaubtStart =
+      Z.modus !== 'scrollen' &&
+      Z.fokusModus !== 'oval' && Z.fokusModus !== 'rechteck' && Z.fokusModus !== 'laser';
+    if (kontaktAktiv && werkzeugErlaubtStart && !(Z.nurStiftZeichnet && istHandflaeche(e))) {
+      strichStarten(e, canvas);
+      return; // strichStarten hat bereits den ersten Punkt gesetzt und gezeichnet
+    }
+  }
+
   if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
   e.preventDefault();
 
@@ -1368,7 +1386,14 @@ function stricheZeichnen(ctx, striche) {
     }
   });
 }
-
+function istHandflaeche(e) {
+  if (e.pointerType !== 'touch') return false;
+  const SCHWELLE_PX = 20;
+  const breite = e.width  || 0;
+  const hoehe  = e.height || 0;
+  if (breite === 0 && hoehe === 0) return true;
+  return Math.max(breite, hoehe) > SCHWELLE_PX;
+}
 
 /* ===================================================================
    11. LASERPOINTER
