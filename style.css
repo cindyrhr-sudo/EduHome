@@ -11,6 +11,8 @@
    - Schultafel-Ansicht (.tafel-wrapper, .tafel-canvas, .tafel-bg)
    - Widgets + Kindergarten-Dock (aus Klassenzimmer-Board portiert,
      auf EduLayer-Variablen umgestellt)
+   - Tafel-Hintergründe "Lineatur" & "Häuschen" als PNG-Kacheln,
+     mit eigener Hell-/Dunkel-Variante (analog zum Geodreieck)
 
   INHALTSVERZEICHNIS:
    1.  Thema-Variablen
@@ -530,6 +532,14 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
    11b. SCHULTAFEL-ANSICHT                                       [NEU]
    Analog zum PDF-Container, aber nur eine feste Zeichenfläche statt
    mehrerer Seiten. Größe = kompletter sichtbarer Hauptbereich.
+
+   Tafel-Hintergründe:
+    - .bg-kariert / .bg-liniert: reine CSS-Gradients (unverändert)
+    - .bg-lineatur / .bg-haeuschen: PNG-Kacheln (3line.png / 3line-dark.png
+      bzw. Häuschen.png / Häuschen-dark.png), Hell/Dunkel-Auswahl erfolgt
+      per JS (tafelBgBildSetzen) über background-image auf #tafel-bg.
+      Die Kachelhöhe wird an --tafel-raster gekoppelt, die Breite ergibt
+      sich proportional aus dem PNG-Seitenverhältnis (500×400 px).
 ════════════════════════════════════════════════════════════════════ */
 .tafel-wrapper {
   position: absolute; inset: 0; overflow: hidden;
@@ -548,6 +558,17 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
 .tafel-bg.bg-liniert {
   background-image: linear-gradient(to bottom, rgba(120,140,190,0.20) 1px, transparent 1px);
   background-size: 100% var(--tafel-raster);
+}
+.tafel-bg.bg-lineatur,
+.tafel-bg.bg-haeuschen {
+  /* background-image wird per JS (tafelBgBildSetzen) gesetzt, damit
+     bei Themenwechsel zwischen Hell-/Dunkelvariante umgeschaltet
+     werden kann, ohne die Klasse zu wechseln. */
+  background-repeat: repeat;
+  /* PNGs sind 500×400 px (Breite×Höhe) -> Seitenverhältnis 1.25:1.
+     Höhe = eine Zeile = --tafel-raster, Breite proportional dazu,
+     damit die Kachel nicht verzerrt wird. */
+  background-size: calc(var(--tafel-raster) * 1.25) var(--tafel-raster);
 }
 .tafel-canvas {
   position: absolute; inset: 0; z-index: 2;
@@ -1109,7 +1130,8 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
 .einstellungen-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--panel-rand); }
 .einstellungen-version { font-size: 11px; color: var(--text-3); }
 
-.bg-type-row { display: flex; gap: 8px; width: 100%; }
+.bg-type-row { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.bg-type-row .settings-row { flex: 1 1 28%; min-width: 84px; }
 .settings-row {
   flex: 1; display: flex; align-items: center; justify-content: center;
   gap: 6px; background: var(--btn-bg); color: var(--text-1); border: none;
