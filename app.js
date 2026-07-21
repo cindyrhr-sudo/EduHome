@@ -86,14 +86,16 @@ const KONFIGURATION = {
   // zum bisherigen Wert aus Klassenzimmer-Board).
   OPTISCH_PX_PRO_CM: 37.8,
 
-  // Tafel-Hintergrund-Kacheln (PNG, 500×400 px = Breite×Höhe,
-  // Seitenverhältnis 1.25:1). Je Variante eine Hell- und eine
-  // Dunkel-Version, analog zum Geodreieck-Bild-Wechsel.
+  // Tafel-Hintergrund-Kacheln (PNG, 500×400 px, enthalten JEWEILS
+  // 5 identische Zeilen übereinander = 80px pro Zeile im Original).
+  // Die tatsächliche Skalierung (5× --tafel-raster für die ganze
+  // Kachel) steht in style.css bei .bg-lineatur/.bg-haeuschen.
+  // Je Variante eine Hell- und eine Dunkel-Version, analog zum
+  // Geodreieck-Bild-Wechsel.
   TAFEL_BG_BILDER: {
     lineatur:  { hell: 'icons/3line.png',    dunkel: 'icons/3line-dark.png'    },
     haeuschen: { hell: 'icons/Häuschen.png', dunkel: 'icons/Häuschen-dark.png' },
   },
-  TAFEL_BG_SEITENVERHAELTNIS: 500 / 400,
 
   SPOTLIGHT_MIN_B:   60,
   SPOTLIGHT_MIN_H:   40,
