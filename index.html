@@ -293,13 +293,13 @@
 
     <!-- Vorwärts (Wiederholen) / Rückwärts (Rückgängig) / Löschen -->
     <div class="werkzeug-gruppe">
+            <button id="btn-undo" class="werkzeug-btn" title="Rückgängig (⌘Z)" aria-label="Rückgängig">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.48"/></svg>
+        <span class="btn-label">Zurück</span>
+      </button>
       <button id="btn-redo" class="werkzeug-btn" title="Wiederholen (⌘Y)" aria-label="Wiederholen">
         <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.48"/></svg>
         <span class="btn-label">Wieder</span>
-      </button>
-      <button id="btn-undo" class="werkzeug-btn" title="Rückgängig (⌘Z)" aria-label="Rückgängig">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.48"/></svg>
-        <span class="btn-label">Zurück</span>
       </button>
       <button id="btn-seite-leeren" class="werkzeug-btn werkzeug-btn--gefahr" title="Seite/Tafel leeren" aria-label="Seite leeren">
         <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
@@ -476,7 +476,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           PDF speichern
         </button>
-        <p class="einstellungen-hinweis">Exportiert die annotierte PDF-Datei des aktiven PDF-Tabs. Nur verfügbar, wenn gerade ein PDF-Tab aktiv ist.</p>
+        <p class="einstellungen-hinweis">Exportiert annotierte PDF-Datei des aktiven PDF-Tabs.</p>
       </div>
 
       <div class="einstellungen-abschnitt">
@@ -485,7 +485,7 @@
         <button id="btn-tafeln-export" class="einstellungen-btn">⬇️ Tafeln als Datei speichern</button>
         <button id="btn-tafeln-import" class="einstellungen-btn">⬆️ Tafel-Datei öffnen</button>
         <input type="file" id="tafeln-import-input" accept="application/json" style="display:none" />
-        <p class="einstellungen-hinweis">Betrifft alle Schultafel-Tabs gemeinsam (nicht die PDFs). Wird beim App-Start automatisch geladen, wenn lokal gespeichert.</p>
+        <p class="einstellungen-hinweis">Betrifft alle Schultafel-Tabs gemeinsam</p>
       </div>
 
       <div class="einstellungen-abschnitt">
@@ -551,9 +551,7 @@
                    min="50" max="150" step="0.5" value="100"/>
             <span id="geo-kalibrierung-anzeige" class="slider-wert">100 %</span>
           </div>
-          <p class="einstellungen-hinweis">
-            Nur in PDF-Tabs wirksam. Geodreieck auf eine bekannte 1cm-Markierung
-            legen und mit einem echten Lineal vergleichen.
+         
           </p>
         </div>
         <div class="einstellungen-zeile einstellungen-zeile--spalte">
