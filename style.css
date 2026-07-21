@@ -562,9 +562,8 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
 .tafel-bg.bg-lineatur,
 .tafel-bg.bg-haeuschen {
   background-repeat: repeat;
-  background-position: left top;
+  background-position: 0 0;
   background-size: calc(var(--tafel-raster) * 10) calc(var(--tafel-raster) * 4);
-
 }
 .tafel-canvas {
   position: absolute; inset: 0; z-index: 2;
