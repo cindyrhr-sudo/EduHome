@@ -20,6 +20,12 @@
  *  - Lineal/Geodreieck sind in PDF-Tabs echt auf cm kalibriert
  *    (pxProCm aus der PDF-Seitengröße), in Tafel-Tabs rein optisch
  *    (fester Bildschirm-px-pro-cm-Wert, kein Kalibrierungs-Anspruch).
+ *  - Tafel-Hintergründe "Lineatur" (3line.png) und "Häuschen"
+ *    (Häuschen.png) funktionieren wie das Geodreieck: pro Variante
+ *    gibt es eine Hell- und eine Dunkel-PNG-Kachel; welche aktiv ist,
+ *    entscheidet ausschließlich das App-Thema (Z.thema), nicht der
+ *    Tab-Typ - betrifft ausschließlich die Zeichenfläche der Tafel,
+ *    die Sidebars bleiben davon unberührt.
  *
  * STRUKTUR:
  *  1.  KONFIGURATION
@@ -79,6 +85,15 @@ const KONFIGURATION = {
   // Anspruch, dient nur als angenehme Bildschirm-Näherung - identisch
   // zum bisherigen Wert aus Klassenzimmer-Board).
   OPTISCH_PX_PRO_CM: 37.8,
+
+  // Tafel-Hintergrund-Kacheln (PNG, 500×400 px = Breite×Höhe,
+  // Seitenverhältnis 1.25:1). Je Variante eine Hell- und eine
+  // Dunkel-Version, analog zum Geodreieck-Bild-Wechsel.
+  TAFEL_BG_BILDER: {
+    lineatur:  { hell: 'icons/3line.png',    dunkel: 'icons/3line-dark.png'    },
+    haeuschen: { hell: 'icons/Häuschen.png', dunkel: 'icons/Häuschen-dark.png' },
+  },
+  TAFEL_BG_SEITENVERHAELTNIS: 500 / 400,
 
   SPOTLIGHT_MIN_B:   60,
   SPOTLIGHT_MIN_H:   40,
@@ -466,6 +481,13 @@ function themaWechseln(thema) {
     ?.setAttribute('content', thema === 'hell' ? '#e8eaf0' : '#1a1f2e');
   try { localStorage.setItem('edulayer-thema', thema); } catch(_) {}
   if (Z.geodreieckAktiv) geodreieckBildAktualisieren();
+
+  // Tafel-Hintergrund: falls gerade eine Tafel mit Lineatur/Häuschen
+  // aktiv ist, die passende Hell-/Dunkel-PNG-Kachel nachladen.
+  const tab = aktuellerTab();
+  if (tab && tab.type === 'tafel' && (tab.bgTyp === 'lineatur' || tab.bgTyp === 'haeuschen')) {
+    tafelBgBildSetzen(tab.bgTyp);
+  }
 }
 function themaLaden() {
   let t = 'dunkel';
@@ -523,10 +545,27 @@ function tafelBgSetzen(typ) {
   const tab = aktuellerTab();
   if (tab && tab.type === 'tafel') { tab.bgTyp = typ; tafelBgAnwenden(typ); }
 }
+
+/** Setzt für die PNG-basierten Hintergründe (Lineatur/Häuschen) das
+ *  passende Bild abhängig vom aktuellen App-Thema. Analog zu
+ *  geodreieckBildAktualisieren(), aber ohne <img>-Fallback-Logik, da
+ *  #tafel-bg ein reines Hintergrundbild-Element ist. */
+function tafelBgBildSetzen(typ) {
+  const eintrag = KONFIGURATION.TAFEL_BG_BILDER[typ];
+  if (!eintrag) return;
+  const datei = Z.thema === 'hell' ? eintrag.hell : eintrag.dunkel;
+  D.tafelBg.style.backgroundImage = `url('${datei}')`;
+}
+
 function tafelBgAnwenden(typ) {
-  D.tafelBg.classList.remove('bg-kariert', 'bg-liniert');
+  D.tafelBg.classList.remove('bg-kariert', 'bg-liniert', 'bg-lineatur', 'bg-haeuschen');
+  D.tafelBg.style.backgroundImage = '';
   if (typ === 'kariert') D.tafelBg.classList.add('bg-kariert');
   if (typ === 'liniert') D.tafelBg.classList.add('bg-liniert');
+  if (typ === 'lineatur' || typ === 'haeuschen') {
+    D.tafelBg.classList.add('bg-' + typ);
+    tafelBgBildSetzen(typ);
+  }
   document.querySelectorAll('.bg-type-btn').forEach(b => b.classList.toggle('mode-active', b.dataset.bgtype === typ));
 }
 
