@@ -3070,6 +3070,23 @@ function debugStiftCapture(e) {
   debugStiftLog(`pointerdown empfangen von: ${debugStiftElementBeschreiben(e.target)}`, e);
 }
 
+function debugStiftHerzschlagStarten() {
+  let letzterSchlag = performance.now();
+  setInterval(() => {
+    const jetzt = performance.now();
+    const delta = jetzt - letzterSchlag;
+    // Erwartet werden ~500ms zwischen den Schlägen. Alles deutlich
+    // darüber bedeutet: der Haupt-Thread war blockiert/beschäftigt und
+    // konnte diesen Timer-Tick nicht rechtzeitig ausführen - GENAU DAS
+    // kann iPadOS dazu bringen, einen neuen Stift-Kontakt gar nicht erst
+    // als Pointer-Event an die Seite auszuliefern.
+    if (DEBUG_STIFT.aktiv && delta > 800) {
+      debugStiftLog(`⏱️⚠️ HAUPT-THREAD-STILLSTAND: ${Math.round(delta)}ms (erwartet ~500ms)`);
+    }
+    letzterSchlag = jetzt;
+  }, 500);
+}
+
 function debugStiftPanelBauen() {
   const btn = document.createElement('button');
   btn.textContent = '🐞';
@@ -3168,6 +3185,7 @@ function appStart() {
   zoomInit();
   neueTafelInit();
   debugStiftPanelBauen(); // 🐞 DEBUG
+  debugStiftHerzschlagStarten(); // 🐞 DEBUG
 
   // Zeichen-Listener für die Tafel-Canvas werden EINMALIG gebunden,
   // da es sich um ein persistentes, wiederverwendetes Element handelt
