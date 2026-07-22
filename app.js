@@ -146,7 +146,6 @@ const Z = {
   aktuellerStrich: null,
   geradeLinieStart: null,
   geradeLinieBasis: null,
-  zeichenWatchdogTimer: null,
 
   modus:           'zeichnen',
   thema:           'dunkel',
@@ -1187,39 +1186,12 @@ function vorschauBasisWiederherstellen(ctx, canvas, basis) {
   ctx.drawImage(basis, 0, 0, canvas.width / dpr, canvas.height / dpr);
 }
 
-/** Notbremse gegen einen "hängenden" Zeichenzustand: falls nach einem
- *  pointerdown über einen längeren Zeitraum weder ein weiteres pointermove
- *  noch ein sauberes pointerup/pointercancel/lostpointercapture eintrifft
- *  (z.B. weil ein Event bei sehr schnellem Kontaktwechsel mit einem
- *  Ersatzstift wie dem Logitech Crayon verloren geht), wird der Strich
- *  automatisch abgeschlossen statt dauerhaft "hängen" zu bleiben und
- *  den nächsten Strich stillschweigend zu blockieren. Wird bei jedem
- *  Start UND jeder Bewegung neu gestartet (Inaktivitäts-Timeout).
- */
-function zeichenWatchdogStarten(canvas) {
-  clearTimeout(Z.zeichenWatchdogTimer);
-  Z.zeichenWatchdogTimer = setTimeout(() => {
-    if (Z.zeichnet) {
-      console.warn('[EduLayer] Zeichen-Watchdog: hängender Strich-Zustand automatisch zurückgesetzt.');
-      strichAbschliessen(canvas);
-    }
-  }, 2500);
-}
-function zeichenWatchdogStoppen() {
-  clearTimeout(Z.zeichenWatchdogTimer);
-  Z.zeichenWatchdogTimer = null;
-}
-
 function strichStarten(e, canvas) {
   const tab = aktuellerTab(); if (!tab) return;
-  if (Z.modus === 'scrollen') return;
-  if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') return;
-  if (Z.fokusModus === 'laser') { laserStarten(e); return; }
-  // Handballenschutz: NICHT mehr pauschal jeden pointerType 'touch' blocken
-  // (das hat auch echte, aber von WebKit falsch klassifizierte Crayon-
-  // Stiftkontakte verschluckt) - stattdessen dieselbe größenbasierte
-  // Handballen-Erkennung wie bei der Selbstheilung in strichBewegen nutzen.
-  if (Z.nurStiftZeichnet && istHandflaeche(e)) return;
+  if (Z.modus === 'scrollen') { debugStiftLog('❌ abgelehnt: Scroll-Modus aktiv', e); return; } // 🐞 DEBUG
+  if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') { debugStiftLog(`❌ abgelehnt: Fokus-Modus "${Z.fokusModus}" aktiv`, e); return; } // 🐞 DEBUG
+  if (Z.fokusModus === 'laser') { debugStiftLog('ℹ️ an Laser weitergeleitet', e); laserStarten(e); return; } // 🐞 DEBUG
+  if (Z.nurStiftZeichnet && e.pointerType === 'touch') { debugStiftLog('❌ abgelehnt: Handballenschutz (pointerType=touch)', e); return; } // 🐞 DEBUG
 
   if (Z.zeichnet) {
     // Derselbe Kontakt meldet sich nochmal (z.B. doppeltes pointerdown)
@@ -1228,16 +1200,17 @@ function strichStarten(e, canvas) {
     // pointerup/pointercancel beendet (bekannt bei sehr schnellem
     // Absetzen/Neuansetzen des Apple Pencil) - dann jetzt erzwungen sauber
     // abschließen, statt den neuen Aufsatzpunkt zu verschlucken.
-    if (e.pointerId === Z.aktiverPointerId) return;
+    if (e.pointerId === Z.aktiverPointerId) { debugStiftLog('⚠️ doppeltes pointerdown, ignoriert', e); return; } // 🐞 DEBUG
+    debugStiftLog('⚠️ vorheriger Strich hing noch - wird erzwungen abgeschlossen', e); // 🐞 DEBUG
     strichAbschliessen(canvas);
   }
 
+  debugStiftLog('✅ Strich gestartet', e); // 🐞 DEBUG
   e.preventDefault();
   Z.zeichnet = true;
   Z.aktiverPointerId = e.pointerId;
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   Z.letzterPunktGegl = null;
-  zeichenWatchdogStarten(canvas);
 
   let p = koordinaten(e, canvas);
   p = koordinatenGegl(p);
@@ -1297,14 +1270,16 @@ function strichBewegen(e, canvas) {
       Z.modus !== 'scrollen' &&
       Z.fokusModus !== 'oval' && Z.fokusModus !== 'rechteck' && Z.fokusModus !== 'laser';
     if (kontaktAktiv && werkzeugErlaubtStart && !(Z.nurStiftZeichnet && istHandflaeche(e))) {
+      debugStiftLog('🩹 Selbstheilung: pointerdown fehlte, Start via pointermove', e); // 🐞 DEBUG
       strichStarten(e, canvas);
       return; // strichStarten hat bereits den ersten Punkt gesetzt und gezeichnet
+    } else if (kontaktAktiv) {
+      debugStiftLog('❌ Selbstheilung verweigert (Modus/Handballen)', e); // 🐞 DEBUG
     }
   }
 
   if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
   e.preventDefault();
-  zeichenWatchdogStarten(canvas);
 
   let p = koordinaten(e, canvas);
   p = koordinatenGegl(p);
@@ -1351,7 +1326,6 @@ function strichBewegen(e, canvas) {
  *  (lostpointercapture, erzwungener Neustart bei hängendem Zustand)
  *  exakt denselben, korrekten Abschluss durchlaufen. */
 function strichAbschliessen(canvas, endPunkt) {
-  zeichenWatchdogStoppen();
   const tab = aktuellerTab();
   if (tab) {
     if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
@@ -1397,7 +1371,11 @@ function strichAbschliessen(canvas, endPunkt) {
 
 function strichBeenden(e, canvas) {
   if (Z.fokusModus === 'laser') { laserBeenden(); return; }
-  if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
+  if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) {
+    debugStiftLog('⚠️ pointerup ohne passenden aktiven Strich (ins Leere)', e); // 🐞 DEBUG
+    return;
+  }
+  debugStiftLog('✅ Strich beendet', e); // 🐞 DEBUG
   e.preventDefault();
 
   let pEnd = null;
@@ -1463,15 +1441,7 @@ function istHandflaeche(e) {
   const SCHWELLE_PX = 20;
   const breite = e.width  || 0;
   const hoehe  = e.height || 0;
-  // Unbekannte Kontaktgröße (width/height = 0) NICHT als Handballen werten:
-  // Das tritt gehäuft bei Ersatzstiften wie dem Logitech Crayon auf, deren
-  // Kontakte WebKit gelegentlich fälschlich als pointerType 'touch' statt
-  // 'pen' meldet - meist OHNE Flächenangabe, weil es sich technisch um
-  // einen feinen Punktkontakt handelt. Ein echter Handballen liefert von
-  // iPadOS dagegen so gut wie immer eine reale, größere gemessene Fläche.
-  // Die alte "unbekannt = sicherheitshalber Handballen"-Annahme hat daher
-  // genau die Fälle blockiert, die eigentlich Stift-Striche waren.
-  if (breite === 0 && hoehe === 0) return false;
+  if (breite === 0 && hoehe === 0) return true;
   return Math.max(breite, hoehe) > SCHWELLE_PX;
 }
 
@@ -3038,6 +3008,142 @@ function swRegistrieren() {
 
 
 /* ===================================================================
+   🐞 TEMPORÄRE STIFT-DIAGNOSE - BEGIN
+   -------------------------------------------------------------------
+   Rein zur Fehlersuche bei "Stift reagiert manchmal nicht". Komplett
+   eigenständig, greift nirgends verändernd in die Zeichen-Engine ein
+   (nur lesend/protokollierend) und lässt sich später einfach löschen:
+   diesen ganzen Block entfernen + die 3 mit "🐞 DEBUG" markierten
+   Aufrufe in strichStarten()/strichBeenden() wieder entfernen.
+
+   ZWEI EBENEN:
+   - Ebene 1 (Capture-Listener): protokolliert JEDES pointerdown im
+     Tafel-Bereich und welches DOM-Element es zuerst empfängt - deckt
+     auf, ob z.B. ein Widget oder die Spotlight-Maske den Kontakt vor
+     dem Canvas abfängt.
+   - Ebene 2 (in strichStarten/strichBeenden): protokolliert, WARUM
+     die App einen Kontakt, der beim Canvas ankommt, trotzdem ablehnt
+     (Handballenschutz, Scroll-Modus, Fokus-Modus) oder erfolgreich
+     verarbeitet.
+==================================================================== */
+const DEBUG_STIFT = { aktiv: false, log: [], maxEintraege: 80 };
+
+function debugStiftLog(text, e) {
+  if (!DEBUG_STIFT.aktiv) return;
+  const jetzt = new Date();
+  const zeit = jetzt.toLocaleTimeString('de-DE', { hour12: false }) + '.' +
+    String(jetzt.getMilliseconds()).padStart(3, '0');
+  let zusatz = '';
+  if (e) {
+    const typ = e.pointerType || '?';
+    const b = e.width != null ? Math.round(e.width) : '?';
+    const h = e.height != null ? Math.round(e.height) : '?';
+    zusatz = ` [typ=${typ} b=${b} h=${h}]`;
+  }
+  DEBUG_STIFT.log.unshift(`${zeit}  ${text}${zusatz}`);
+  if (DEBUG_STIFT.log.length > DEBUG_STIFT.maxEintraege) DEBUG_STIFT.log.length = DEBUG_STIFT.maxEintraege;
+  debugStiftPanelAktualisieren();
+}
+
+function debugStiftElementBeschreiben(el) {
+  if (!el) return '(kein Element)';
+  if (el === document.getElementById('tafel-canvas')) return 'TAFEL-CANVAS ✅';
+  const spezifisch = el.closest?.('.widget');
+  if (spezifisch) return `WIDGET (${spezifisch.getAttribute('data-type') || '?'}, id=${spezifisch.id})`;
+  if (el.id === 'spotlight-maske') return 'SPOTLIGHT-MASKE ⚠️';
+  if (el.closest?.('.spotlight-fenster')) return 'SPOTLIGHT-FENSTER ⚠️';
+  if (el.closest?.('.geodreieck-wrapper')) return 'GEODREIECK-GRIFF';
+  if (el.closest?.('.lineal-wrapper')) return 'LINEAL-GRIFF';
+  if (el.closest?.('#sidebar, #sidebar-tabs')) return 'SIDEBAR';
+  if (el.closest?.('.flyout')) return 'FLYOUT';
+  const klasse = el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '';
+  return `${el.tagName || '?'}${el.id ? '#' + el.id : ''}${klasse}`;
+}
+
+function debugStiftCapture(e) {
+  if (!DEBUG_STIFT.aktiv) return;
+  const tafelWrapper = document.getElementById('tafel-wrapper');
+  if (!tafelWrapper || tafelWrapper.style.display === 'none') return; // nur relevant, wenn gerade eine Tafel aktiv ist
+  const rect = tafelWrapper.getBoundingClientRect();
+  const clientX = e.clientX, clientY = e.clientY;
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+  debugStiftLog(`pointerdown empfangen von: ${debugStiftElementBeschreiben(e.target)}`, e);
+}
+
+function debugStiftPanelBauen() {
+  const btn = document.createElement('button');
+  btn.textContent = '🐞';
+  btn.title = 'Stift-Diagnose ein/aus';
+  Object.assign(btn.style, {
+    position: 'fixed', left: '10px', bottom: '10px', zIndex: 99999,
+    width: '40px', height: '40px', borderRadius: '50%', border: 'none',
+    background: '#222', color: '#fff', fontSize: '18px', opacity: '0.55',
+    touchAction: 'manipulation',
+  });
+
+  const panel = document.createElement('div');
+  Object.assign(panel.style, {
+    position: 'fixed', left: '10px', bottom: '58px', zIndex: 99999,
+    width: 'min(94vw, 480px)', maxHeight: '46vh', overflowY: 'auto',
+    background: 'rgba(10,10,14,0.94)', color: '#8dffa0',
+    fontFamily: 'ui-monospace, monospace', fontSize: '11px',
+    lineHeight: '1.5', padding: '8px 10px', borderRadius: '10px',
+    display: 'none', whiteSpace: 'pre-wrap', touchAction: 'pan-y',
+    border: '1px solid #444',
+  });
+
+  const kopf = document.createElement('div');
+  Object.assign(kopf.style, {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: '6px', color: '#fff', fontWeight: 'bold',
+  });
+  kopf.innerHTML = `<span>🐞 Stift-Diagnose</span>`;
+  const btnLeeren = document.createElement('button');
+  btnLeeren.textContent = 'Leeren';
+  Object.assign(btnLeeren.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 8px', marginLeft: '6px' });
+  btnLeeren.onclick = () => { DEBUG_STIFT.log = []; debugStiftPanelAktualisieren(); };
+  const btnSchliessen = document.createElement('button');
+  btnSchliessen.textContent = '×';
+  Object.assign(btnSchliessen.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 10px', marginLeft: '6px' });
+  btnSchliessen.onclick = () => { panel.style.display = 'none'; };
+  const rechts = document.createElement('div');
+  rechts.appendChild(btnLeeren); rechts.appendChild(btnSchliessen);
+  kopf.appendChild(rechts);
+
+  const inhalt = document.createElement('div');
+  inhalt.id = 'debug-stift-inhalt';
+
+  panel.appendChild(kopf);
+  panel.appendChild(inhalt);
+
+  btn.onclick = () => {
+    DEBUG_STIFT.aktiv = !DEBUG_STIFT.aktiv;
+    btn.style.opacity = DEBUG_STIFT.aktiv ? '1' : '0.55';
+    btn.style.background = DEBUG_STIFT.aktiv ? '#c41c1c' : '#222';
+    panel.style.display = DEBUG_STIFT.aktiv ? 'block' : 'none';
+    if (DEBUG_STIFT.aktiv) debugStiftLog('--- Diagnose gestartet ---');
+  };
+
+  document.body.appendChild(panel);
+  document.body.appendChild(btn);
+
+  // Capture-Phase: läuft VOR allen anderen Handlern, sieht also auch
+  // Kontakte, die von anderen Elementen mit stopPropagation() sonst
+  // "verschluckt" würden.
+  document.addEventListener('pointerdown', debugStiftCapture, true);
+}
+
+function debugStiftPanelAktualisieren() {
+  const el = document.getElementById('debug-stift-inhalt');
+  if (!el) return;
+  el.textContent = DEBUG_STIFT.log.join('\n');
+}
+/* ===================================================================
+   🐞 TEMPORÄRE STIFT-DIAGNOSE - ENDE
+==================================================================== */
+
+
+/* ===================================================================
    23. APP-START
 ==================================================================== */
 function appStart() {
@@ -3061,6 +3167,7 @@ function appStart() {
   linealInit();
   zoomInit();
   neueTafelInit();
+  debugStiftPanelBauen(); // 🐞 DEBUG
 
   // Zeichen-Listener für die Tafel-Canvas werden EINMALIG gebunden,
   // da es sich um ein persistentes, wiederverwendetes Element handelt
