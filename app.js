@@ -146,6 +146,7 @@ const Z = {
   aktuellerStrich: null,
   geradeLinieStart: null,
   geradeLinieBasis: null,
+  zeichenWatchdogTimer: null,
 
   modus:           'zeichnen',
   thema:           'dunkel',
@@ -1186,12 +1187,39 @@ function vorschauBasisWiederherstellen(ctx, canvas, basis) {
   ctx.drawImage(basis, 0, 0, canvas.width / dpr, canvas.height / dpr);
 }
 
+/** Notbremse gegen einen "hängenden" Zeichenzustand: falls nach einem
+ *  pointerdown über einen längeren Zeitraum weder ein weiteres pointermove
+ *  noch ein sauberes pointerup/pointercancel/lostpointercapture eintrifft
+ *  (z.B. weil ein Event bei sehr schnellem Kontaktwechsel mit einem
+ *  Ersatzstift wie dem Logitech Crayon verloren geht), wird der Strich
+ *  automatisch abgeschlossen statt dauerhaft "hängen" zu bleiben und
+ *  den nächsten Strich stillschweigend zu blockieren. Wird bei jedem
+ *  Start UND jeder Bewegung neu gestartet (Inaktivitäts-Timeout).
+ */
+function zeichenWatchdogStarten(canvas) {
+  clearTimeout(Z.zeichenWatchdogTimer);
+  Z.zeichenWatchdogTimer = setTimeout(() => {
+    if (Z.zeichnet) {
+      console.warn('[EduLayer] Zeichen-Watchdog: hängender Strich-Zustand automatisch zurückgesetzt.');
+      strichAbschliessen(canvas);
+    }
+  }, 2500);
+}
+function zeichenWatchdogStoppen() {
+  clearTimeout(Z.zeichenWatchdogTimer);
+  Z.zeichenWatchdogTimer = null;
+}
+
 function strichStarten(e, canvas) {
   const tab = aktuellerTab(); if (!tab) return;
   if (Z.modus === 'scrollen') return;
   if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') return;
   if (Z.fokusModus === 'laser') { laserStarten(e); return; }
-  if (Z.nurStiftZeichnet && e.pointerType === 'touch') return; // Handballenschutz: nur Stift/Maus zeichnet
+  // Handballenschutz: NICHT mehr pauschal jeden pointerType 'touch' blocken
+  // (das hat auch echte, aber von WebKit falsch klassifizierte Crayon-
+  // Stiftkontakte verschluckt) - stattdessen dieselbe größenbasierte
+  // Handballen-Erkennung wie bei der Selbstheilung in strichBewegen nutzen.
+  if (Z.nurStiftZeichnet && istHandflaeche(e)) return;
 
   if (Z.zeichnet) {
     // Derselbe Kontakt meldet sich nochmal (z.B. doppeltes pointerdown)
@@ -1209,6 +1237,7 @@ function strichStarten(e, canvas) {
   Z.aktiverPointerId = e.pointerId;
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   Z.letzterPunktGegl = null;
+  zeichenWatchdogStarten(canvas);
 
   let p = koordinaten(e, canvas);
   p = koordinatenGegl(p);
@@ -1275,6 +1304,7 @@ function strichBewegen(e, canvas) {
 
   if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) return;
   e.preventDefault();
+  zeichenWatchdogStarten(canvas);
 
   let p = koordinaten(e, canvas);
   p = koordinatenGegl(p);
@@ -1321,6 +1351,7 @@ function strichBewegen(e, canvas) {
  *  (lostpointercapture, erzwungener Neustart bei hängendem Zustand)
  *  exakt denselben, korrekten Abschluss durchlaufen. */
 function strichAbschliessen(canvas, endPunkt) {
+  zeichenWatchdogStoppen();
   const tab = aktuellerTab();
   if (tab) {
     if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
@@ -1432,7 +1463,15 @@ function istHandflaeche(e) {
   const SCHWELLE_PX = 20;
   const breite = e.width  || 0;
   const hoehe  = e.height || 0;
-  if (breite === 0 && hoehe === 0) return true;
+  // Unbekannte Kontaktgröße (width/height = 0) NICHT als Handballen werten:
+  // Das tritt gehäuft bei Ersatzstiften wie dem Logitech Crayon auf, deren
+  // Kontakte WebKit gelegentlich fälschlich als pointerType 'touch' statt
+  // 'pen' meldet - meist OHNE Flächenangabe, weil es sich technisch um
+  // einen feinen Punktkontakt handelt. Ein echter Handballen liefert von
+  // iPadOS dagegen so gut wie immer eine reale, größere gemessene Fläche.
+  // Die alte "unbekannt = sicherheitshalber Handballen"-Annahme hat daher
+  // genau die Fälle blockiert, die eigentlich Stift-Striche waren.
+  if (breite === 0 && hoehe === 0) return false;
   return Math.max(breite, hoehe) > SCHWELLE_PX;
 }
 
