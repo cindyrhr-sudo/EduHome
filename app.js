@@ -59,6 +59,16 @@
 /* ===================================================================
    1. KONFIGURATION
 ==================================================================== */
+/** Schalter-Experiment gegen "Striche reagieren manchmal nicht bei
+ *  schnell aufeinanderfolgenden Kontakten": canvas.setPointerCapture()/
+ *  releasePointerCapture() komplett deaktiviert. Canvas deckt die
+ *  gesamte Zeichenfläche ab, daher ist Capture für normales Schreiben
+ *  nicht zwingend nötig (nur relevant, falls der Stift während eines
+ *  Strichs über den Canvas-Rand hinausgeht). Betrifft AUSSCHLIESSLICH
+ *  diese eine Konstante - kein sonstiger Code wurde verändert.
+ *  Zum Zurückstellen: einfach wieder auf true setzen. */
+const POINTER_CAPTURE_AKTIV = false;
+
 const KONFIGURATION = {
   STIFT_DUENN_PX:    4,
   STIFT_DICK_PX:     8,
@@ -1209,7 +1219,7 @@ function strichStarten(e, canvas) {
   e.preventDefault();
   Z.zeichnet = true;
   Z.aktiverPointerId = e.pointerId;
-  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  if (POINTER_CAPTURE_AKTIV) { try { canvas.setPointerCapture(e.pointerId); } catch (_) {} }
   Z.letzterPunktGegl = null;
 
   let p = koordinaten(e, canvas);
@@ -1359,7 +1369,7 @@ function strichAbschliessen(canvas, endPunkt) {
       tab.annotationen[seite].push(Z.aktuellerStrich);
     }
   }
-  try { if (Z.aktiverPointerId !== null) canvas.releasePointerCapture(Z.aktiverPointerId); } catch (_) {}
+  if (POINTER_CAPTURE_AKTIV) { try { if (Z.aktiverPointerId !== null) canvas.releasePointerCapture(Z.aktiverPointerId); } catch (_) {} }
   Z.zeichnet = false;
   Z.aktiverPointerId = null;
   Z.aktuellerStrich = null;
@@ -3026,7 +3036,45 @@ function swRegistrieren() {
      (Handballenschutz, Scroll-Modus, Fokus-Modus) oder erfolgreich
      verarbeitet.
 ==================================================================== */
-const DEBUG_STIFT = { aktiv: false, log: [], maxEintraege: 80 };
+const DEBUG_STIFT_KEY = 'edulayer-debug-stift';
+const DEBUG_STIFT = { aktiv: false, log: [], maxEintraege: 150 };
+
+function debugStiftPersistieren() {
+  try {
+    localStorage.setItem(DEBUG_STIFT_KEY, JSON.stringify({ aktiv: DEBUG_STIFT.aktiv, log: DEBUG_STIFT.log }));
+  } catch (_) {}
+}
+
+/** Lädt den Diagnose-Status beim App-Start aus localStorage. Falls die
+ *  Diagnose beim letzten Mal aktiv war, bleibt sie es auch nach einem
+ *  (auch lautlosen) Neustart der Seite - und es wird ein deutlich
+ *  sichtbarer "APP-NEUSTART"-Marker mit der Zeitlücke seit dem letzten
+ *  Eintrag ins Log geschrieben. Erscheint dieser Marker genau dann,
+ *  wenn ein Strich "verschwunden" ist, war die Seite in dem Moment
+ *  neu geladen worden (z.B. durch iPadOS-Speicherbereinigung) - kein
+ *  Routing- oder Blockade-Problem in der Zeichen-Engine mehr.
+ */
+function debugStiftWiederherstellen() {
+  try {
+    const raw = localStorage.getItem(DEBUG_STIFT_KEY);
+    if (!raw) return;
+    const gespeichert = JSON.parse(raw);
+    DEBUG_STIFT.aktiv = !!gespeichert.aktiv;
+    DEBUG_STIFT.log = Array.isArray(gespeichert.log) ? gespeichert.log : [];
+    if (DEBUG_STIFT.aktiv) {
+      const letzterEintrag = DEBUG_STIFT.log[0] || '';
+      const zeitMatch = letzterEintrag.match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+      let luecke = '(unbekannt)';
+      if (zeitMatch) {
+        const dann = new Date();
+        dann.setHours(+zeitMatch[1], +zeitMatch[2], +zeitMatch[3], +zeitMatch[4]);
+        const diffMs = Date.now() - dann.getTime();
+        if (diffMs >= 0 && diffMs < 6 * 60 * 60 * 1000) luecke = `${(diffMs / 1000).toFixed(1)}s`;
+      }
+      DEBUG_STIFT.log.unshift(`🔄🔄🔄 APP-NEUSTART ERKANNT - Lücke seit letztem Eintrag: ${luecke} 🔄🔄🔄`);
+    }
+  } catch (_) {}
+}
 
 function debugStiftLog(text, e) {
   if (!DEBUG_STIFT.aktiv) return;
@@ -3042,6 +3090,7 @@ function debugStiftLog(text, e) {
   }
   DEBUG_STIFT.log.unshift(`${zeit}  ${text}${zusatz}`);
   if (DEBUG_STIFT.log.length > DEBUG_STIFT.maxEintraege) DEBUG_STIFT.log.length = DEBUG_STIFT.maxEintraege;
+  debugStiftPersistieren();
   debugStiftPanelAktualisieren();
 }
 
@@ -3062,11 +3111,9 @@ function debugStiftElementBeschreiben(el) {
 
 function debugStiftCapture(e) {
   if (!DEBUG_STIFT.aktiv) return;
-  const tafelWrapper = document.getElementById('tafel-wrapper');
-  if (!tafelWrapper || tafelWrapper.style.display === 'none') return; // nur relevant, wenn gerade eine Tafel aktiv ist
-  const rect = tafelWrapper.getBoundingClientRect();
-  const clientX = e.clientX, clientY = e.clientY;
-  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+  // Bewusst OHNE Koordinaten-Filter (auch außerhalb der Tafel loggen) -
+  // ein Filter könnte selbst der Grund sein, warum echte Events im Log
+  // nicht auftauchen.
   debugStiftLog(`pointerdown empfangen von: ${debugStiftElementBeschreiben(e.target)}`, e);
 }
 
@@ -3087,7 +3134,43 @@ function debugStiftHerzschlagStarten() {
   }, 500);
 }
 
+/** Wird per Knopfdruck manuell ausgelöst, GENAU dann, wenn gerade ein
+ *  Strich nicht reagiert hat. Nimmt einen kompletten Schnappschuss des
+ *  aktuellen Zustands auf - unabhängig davon, ob automatisch irgendwo
+ *  im Ereignis-Fluss etwas protokolliert wurde. */
+function debugStiftSnapshot() {
+  const canvas = D.tafelCanvas;
+  const rect = canvas.getBoundingClientRect();
+  const computed = window.getComputedStyle(canvas);
+  let hatCapture = 'unbekannt';
+  try { hatCapture = Z.aktiverPointerId !== null ? canvas.hasPointerCapture(Z.aktiverPointerId) : '(kein aktiverPointerId)'; } catch (err) { hatCapture = 'Fehler: ' + err.message; }
+
+  const zeilen = [
+    '📸 SNAPSHOT ausgelöst',
+    `  Z.zeichnet = ${Z.zeichnet}`,
+    `  Z.aktiverPointerId = ${Z.aktiverPointerId}`,
+    `  Z.werkzeug = ${Z.werkzeug}`,
+    `  Z.modus = ${Z.modus}`,
+    `  Z.fokusModus = ${Z.fokusModus}`,
+    `  Z.nurStiftZeichnet = ${Z.nurStiftZeichnet}`,
+    `  hasPointerCapture(aktiverPointerId) = ${hatCapture}`,
+    `  canvas.getBoundingClientRect = ${JSON.stringify({ x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) })}`,
+    `  computed pointer-events = ${computed.pointerEvents}`,
+    `  computed touch-action = ${computed.touchAction}`,
+    `  computed display/visibility = ${computed.display} / ${computed.visibility}`,
+    `  aktiver Tab-Typ = ${aktuellerTab()?.type}`,
+    `  offene Widgets = ${D.tafelWidgetsLayer.querySelectorAll('.widget').length}`,
+    `  Geodreieck aktiv = ${Z.geodreieckAktiv}, Lineal aktiv = ${Z.linealAktiv}`,
+    `  Spotlight-Overlay display = ${D.spotlightOverlay.style.display || '(leer/none)'}`,
+  ];
+  zeilen.forEach(z => { DEBUG_STIFT.log.unshift(z); });
+  if (DEBUG_STIFT.log.length > DEBUG_STIFT.maxEintraege) DEBUG_STIFT.log.length = DEBUG_STIFT.maxEintraege;
+  debugStiftPersistieren();
+  debugStiftPanelAktualisieren();
+}
+
 function debugStiftPanelBauen() {
+  debugStiftWiederherstellen(); // 🐞 DEBUG: Zustand/Log von vor einem evtl. Neustart laden
   const btn = document.createElement('button');
   btn.textContent = '🐞';
   btn.title = 'Stift-Diagnose ein/aus';
@@ -3115,16 +3198,20 @@ function debugStiftPanelBauen() {
     marginBottom: '6px', color: '#fff', fontWeight: 'bold',
   });
   kopf.innerHTML = `<span>🐞 Stift-Diagnose</span>`;
+  const btnSnapshot = document.createElement('button');
+  btnSnapshot.textContent = '📸 Jetzt!';
+  Object.assign(btnSnapshot.style, { background: '#c41c1c', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontWeight: 'bold' });
+  btnSnapshot.onclick = () => debugStiftSnapshot();
   const btnLeeren = document.createElement('button');
   btnLeeren.textContent = 'Leeren';
   Object.assign(btnLeeren.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 8px', marginLeft: '6px' });
-  btnLeeren.onclick = () => { DEBUG_STIFT.log = []; debugStiftPanelAktualisieren(); };
+  btnLeeren.onclick = () => { DEBUG_STIFT.log = []; debugStiftPersistieren(); debugStiftPanelAktualisieren(); };
   const btnSchliessen = document.createElement('button');
   btnSchliessen.textContent = '×';
   Object.assign(btnSchliessen.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 10px', marginLeft: '6px' });
   btnSchliessen.onclick = () => { panel.style.display = 'none'; };
   const rechts = document.createElement('div');
-  rechts.appendChild(btnLeeren); rechts.appendChild(btnSchliessen);
+  rechts.appendChild(btnSnapshot); rechts.appendChild(btnLeeren); rechts.appendChild(btnSchliessen);
   kopf.appendChild(rechts);
 
   const inhalt = document.createElement('div');
@@ -3133,11 +3220,20 @@ function debugStiftPanelBauen() {
   panel.appendChild(kopf);
   panel.appendChild(inhalt);
 
+  // Zustand von vor einem evtl. Neustart übernehmen (Knopf + Panel
+  // sofort im richtigen Zustand zeigen, nicht erst nach erneutem Tippen).
+  if (DEBUG_STIFT.aktiv) {
+    btn.style.opacity = '1'; btn.style.background = '#c41c1c';
+    panel.style.display = 'block';
+    debugStiftPanelAktualisieren();
+  }
+
   btn.onclick = () => {
     DEBUG_STIFT.aktiv = !DEBUG_STIFT.aktiv;
     btn.style.opacity = DEBUG_STIFT.aktiv ? '1' : '0.55';
     btn.style.background = DEBUG_STIFT.aktiv ? '#c41c1c' : '#222';
     panel.style.display = DEBUG_STIFT.aktiv ? 'block' : 'none';
+    debugStiftPersistieren();
     if (DEBUG_STIFT.aktiv) debugStiftLog('--- Diagnose gestartet ---');
   };
 
