@@ -28,6 +28,7 @@
   <link rel="stylesheet"       href="style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="qrcode.js"></script>
 </head>
 
 <body data-sidebar="right" data-modus="zeichnen">
@@ -523,7 +524,7 @@
             <button class="settings-row bg-type-btn" data-bgtype="none" onclick="tafelBgSetzen('none')">Keins</button>
             <button class="settings-row bg-type-btn" data-bgtype="kariert" onclick="tafelBgSetzen('kariert')">Kariert</button>
             <button class="settings-row bg-type-btn" data-bgtype="liniert" onclick="tafelBgSetzen('liniert')">Liniert</button>
-            <button class="settings-row bg-type-btn" data-bgtype="lineatur" onclick="tafelBgSetzen('lineatur')">3 line</button>
+            <button class="settings-row bg-type-btn" data-bgtype="lineatur" onclick="tafelBgSetzen('lineatur')">Lineatur</button>
             <button class="settings-row bg-type-btn" data-bgtype="haeuschen" onclick="tafelBgSetzen('haeuschen')">Häuschen</button>
           </div>
           <div class="slider-zeile" style="margin-top:8px">
@@ -551,8 +552,7 @@
                    min="50" max="150" step="0.5" value="100"/>
             <span id="geo-kalibrierung-anzeige" class="slider-wert">100 %</span>
           </div>
-         
-          </p>
+
         </div>
         <div class="einstellungen-zeile einstellungen-zeile--spalte">
           <span class="einstellungen-label">Lineal-Länge</span>
