@@ -1250,3 +1250,28 @@ body.scroll-modus .tafel-canvas { cursor: grab; pointer-events: none; }
   .sidebar-logo { display: none; }
   .zoom-steuerung { bottom: 8px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   23. ERGÄNZUNGEN (Reparaturen)
+════════════════════════════════════════════════════════════════════ */
+.widget.hidden { display: none; }
+.geodreieck-svg { display: block; }
+.wheel-zeiger {
+  position: absolute; left: 50%; margin-left: -11px; width: 0; height: 0; z-index: 5;
+  border-left: 11px solid transparent; border-right: 11px solid transparent;
+  border-bottom: 22px solid var(--w-text); pointer-events: none;
+}
+.qr-bild { width: 100%; min-height: 0; flex: 1; object-fit: contain; }
+.qr-bild:not([src]) { display: none; }
+#alarm-global {
+  position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  z-index: 950; padding: 14px 24px; border: none; border-radius: 14px;
+  background: var(--gefahr); color: #fff; font-size: 16px; font-weight: 700;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5); touch-action: manipulation;
+}
+.schwebe-box {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 960;
+  display: flex; flex-direction: column; gap: 10px; padding: 18px; min-width: 240px;
+  background: var(--panel-bg); border: 1px solid var(--panel-rand); border-radius: 16px;
+  box-shadow: 0 12px 44px rgba(0,0,0,0.4);
+}
