@@ -150,6 +150,8 @@ const Z = {
   linienstil:      'solid',
   zeichnet:        false,
   aktiverPointerId: null,
+  zeichenTyp:      null,
+  letzterStiftZeit: 0,
   nurStiftZeichnet: true,
   letzterPunkt:    null,
   letzterPunktGegl: null,
@@ -388,11 +390,38 @@ function koordinaten(e, canvas) {
   if (e.touches?.length > 0)             { cx = e.touches[0].clientX;        cy = e.touches[0].clientY; }
   else if (e.changedTouches?.length > 0) { cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY; }
   else                                   { cx = e.clientX;                    cy = e.clientY; }
-  const dpr = KONFIGURATION.ZEICHEN_DPR;
+  return clientZuCanvas(cx, cy, canvas, rect);
+}
+
+/** Bildschirm-Koordinaten -> Zeichen-Koordinaten. canvas._skala ist nur
+ *  bei der Tafel gesetzt (verkleinerte Darstellung nach dem Drehen). */
+function clientZuCanvas(cx, cy, canvas, rect = canvas.getBoundingClientRect()) {
+  const teiler = KONFIGURATION.ZEICHEN_DPR * (canvas._skala || 1);
   return {
-    x: (cx - rect.left) * (canvas.width  / rect.width) / dpr,
-    y: (cy - rect.top)  * (canvas.height / rect.height) / dpr,
+    x: (cx - rect.left) * (canvas.width  / rect.width)  / teiler,
+    y: (cy - rect.top)  * (canvas.height / rect.height) / teiler,
   };
+}
+
+/** Zeichnet ein Pixel-Abbild 1:1, unabhängig von der Skalierung des ctx. */
+function bildDeckungsgleich(ctx, bild) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bild, 0, 0);
+  ctx.restore();
+}
+function canvasLeeren(canvas) {
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+function punktZeichnen(ctx, p, farbe, breite) {
+  ctx.beginPath();
+  ctx.fillStyle = farbe;
+  ctx.arc(p.x, p.y, breite / 2, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function koordinatenGegl(rohPunkt) {
@@ -412,10 +441,49 @@ function clientKoord(e) {
   return { x: e.clientX, y: e.clientY };
 }
 
-function download(daten, dateiname, mimeTyp = 'application/pdf') {
+function istIPad() {
+  return /iPad|iPhone/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function download(daten, dateiname, mimeTyp) {
   const url = URL.createObjectURL(new Blob([daten], { type: mimeTyp }));
-  Object.assign(document.createElement('a'), { href: url, download: dateiname }).click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  const a = Object.assign(document.createElement('a'), { href: url, download: dateiname });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+/** Auf dem iPad über das Teilen-Menü ("In Dateien sichern"), sonst Download. */
+async function dateiAusgeben(daten, dateiname, mimeTyp) {
+  const datei = new File([daten], dateiname, { type: mimeTyp.split(';')[0] });
+  if (!istIPad() || !navigator.canShare?.({ files: [datei] })) {
+    download(daten, dateiname, mimeTyp);
+    toast(`Gespeichert: ${dateiname}`, 'erfolg', 3500);
+    return;
+  }
+  try {
+    await navigator.share({ files: [datei] });
+  } catch (err) {
+    if (err.name === 'AbortError') return; // selbst abgebrochen
+    // Safari verlangt ein frisches Antippen (z. B. nach langem PDF-Aufbau)
+    teilenKnopfZeigen(datei, () => download(daten, dateiname, mimeTyp));
+  }
+}
+
+function teilenKnopfZeigen(datei, ersatz) {
+  document.getElementById('teilen-knopf')?.remove();
+  const box = document.createElement('div');
+  box.id = 'teilen-knopf'; box.className = 'schwebe-box';
+  const ok = Object.assign(document.createElement('button'), { className: 'start-anzeige__btn', textContent: '📤 Datei sichern' });
+  const nein = Object.assign(document.createElement('button'), { className: 'einstellungen-btn', textContent: 'Abbrechen' });
+  ok.onclick = async () => {
+    box.remove();
+    try { await navigator.share({ files: [datei] }); }
+    catch (err) { if (err.name !== 'AbortError') ersatz(); }
+  };
+  nein.onclick = () => box.remove();
+  box.append(ok, nein);
+  document.body.appendChild(box);
 }
 
 function pinchAbstand(t) {
@@ -469,6 +537,7 @@ function geradeLinieZeichnen(ctx, von, bis, farbe, breite, linienstil) {
 }
 
 function geoImgFallback(imgEl) {
+  if (!imgEl.isConnected) return;
   // Einfaches SVG-Ersatzbild, falls icons/geodreieck.png fehlt.
   const svg = `<svg class="geodreieck-svg" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
       <polygon points="0,200 400,200 200,0" fill="rgba(180,222,255,0.38)" stroke="#1b3a57" stroke-width="2.5"/>
@@ -477,6 +546,7 @@ function geoImgFallback(imgEl) {
   wrap.innerHTML = svg;
   const neu = wrap.firstElementChild;
   neu.id = 'geodreieck-svg';
+  neu.style.cssText = imgEl.style.cssText;
   imgEl.replaceWith(neu);
   D.geoBild = neu;
 }
@@ -944,7 +1014,7 @@ function notizenSchliessen() {
 function notizenSpeichern() {
   const tab = aktuellerTab(); if (!tab) return;
   if (tab.type === 'pdf') tab.notizenProSeite[tab.aktiveSeite] = D.notizenTextarea.value;
-  else tab.notiz = D.notizenTextarea.value;
+  else { tab.notiz = D.notizenTextarea.value; autoSpeichernPlanen(); }
 }
 function notizenAktualisieren() {
   const tab = aktuellerTab(); if (!tab) return;
@@ -992,6 +1062,7 @@ function notizenInit() {
     if (tab.type === 'pdf') tab.notizenProSeite[tab.aktiveSeite] = '';
     else tab.notiz = '';
     D.notizenTextarea.value = '';
+    autoSpeichernPlanen();
     toast('Notiz gelöscht.', 'info');
   });
   D.btnNotizenExportieren.addEventListener('click', () => {
@@ -1006,8 +1077,7 @@ function notizenInit() {
       inhalt += tab.notiz || '';
     }
     if (inhalt.trim().split('\n').length <= 3) { toast('Keine Notizen vorhanden.', 'info'); return; }
-    download(new TextEncoder().encode(inhalt), `EduLayer_Notizen_${zeitstempel()}.txt`, 'text/plain;charset=utf-8');
-    toast('Notizen exportiert.', 'erfolg');
+    dateiAusgeben(new TextEncoder().encode(inhalt), `EduLayer_Notizen_${zeitstempel()}.txt`, 'text/plain;charset=utf-8');
   });
 }
 
@@ -1069,6 +1139,7 @@ function werkzeugSidebarAnpassen() {
   const istPdf   = !!tab && tab.type === 'pdf';
   const istTafel = !!tab && tab.type === 'tafel';
   D.btnModusWechsel.classList.toggle('werkzeug-btn--deaktiviert', !istPdf);
+  D.btnModusWechsel.setAttribute('aria-pressed', istPdf && Z.modus === 'scrollen' ? 'true' : 'false');
   if (!istPdf && Z.modus === 'scrollen') { Z.modus = 'zeichnen'; D.body.classList.remove('scroll-modus'); }
   D.zoomSteuerung.style.display = istPdf ? 'flex' : 'none';
   D.btnWidgetMenu.classList.toggle('werkzeug-btn--deaktiviert', !istTafel);
@@ -1127,7 +1198,8 @@ function sidebarInit() {
   });
 
   document.addEventListener('keydown', e => {
-    if (e.ctrlKey || e.metaKey) {
+    const imTextfeld = e.target.matches?.('input, textarea');
+    if ((e.ctrlKey || e.metaKey) && !imTextfeld) {
       if (e.key === 'z') { e.preventDefault(); undoAusfuehren(); }
       if (e.key === 'y') { e.preventDefault(); redoAusfuehren(); }
     }
@@ -1191,17 +1263,16 @@ function vorschauBasisErfassen(canvas) {
 }
 
 function vorschauBasisWiederherstellen(ctx, canvas, basis) {
-  const dpr = KONFIGURATION.ZEICHEN_DPR;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(basis, 0, 0, canvas.width / dpr, canvas.height / dpr);
+  canvasLeeren(canvas);
+  bildDeckungsgleich(ctx, basis);
 }
 
 function strichStarten(e, canvas) {
   const tab = aktuellerTab(); if (!tab) return;
-  if (Z.modus === 'scrollen') { debugStiftLog('❌ abgelehnt: Scroll-Modus aktiv', e); return; } // 🐞 DEBUG
-  if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') { debugStiftLog(`❌ abgelehnt: Fokus-Modus "${Z.fokusModus}" aktiv`, e); return; } // 🐞 DEBUG
-  if (Z.fokusModus === 'laser') { debugStiftLog('ℹ️ an Laser weitergeleitet', e); laserStarten(e); return; } // 🐞 DEBUG
-  if (Z.nurStiftZeichnet && e.pointerType === 'touch') { debugStiftLog('❌ abgelehnt: Handballenschutz (pointerType=touch)', e); return; } // 🐞 DEBUG
+  if (Z.modus === 'scrollen') return;
+  if (Z.fokusModus === 'oval' || Z.fokusModus === 'rechteck') return;
+  if (Z.fokusModus === 'laser') { laserStarten(e); return; }
+  if (Z.nurStiftZeichnet && e.pointerType === 'touch') return;
 
   if (Z.zeichnet) {
     // Derselbe Kontakt meldet sich nochmal (z.B. doppeltes pointerdown)
@@ -1210,15 +1281,14 @@ function strichStarten(e, canvas) {
     // pointerup/pointercancel beendet (bekannt bei sehr schnellem
     // Absetzen/Neuansetzen des Apple Pencil) - dann jetzt erzwungen sauber
     // abschließen, statt den neuen Aufsatzpunkt zu verschlucken.
-    if (e.pointerId === Z.aktiverPointerId) { debugStiftLog('⚠️ doppeltes pointerdown, ignoriert', e); return; } // 🐞 DEBUG
-    debugStiftLog('⚠️ vorheriger Strich hing noch - wird erzwungen abgeschlossen', e); // 🐞 DEBUG
+    if (e.pointerId === Z.aktiverPointerId) return;
     strichAbschliessen(canvas);
   }
 
-  debugStiftLog('✅ Strich gestartet', e); // 🐞 DEBUG
   e.preventDefault();
   Z.zeichnet = true;
   Z.aktiverPointerId = e.pointerId;
+  Z.zeichenTyp = e.pointerType;
   if (POINTER_CAPTURE_AKTIV) { try { canvas.setPointerCapture(e.pointerId); } catch (_) {} }
   Z.letzterPunktGegl = null;
 
@@ -1228,7 +1298,7 @@ function strichStarten(e, canvas) {
   Z.letzterPunkt = p;
 
   const seite = seiteVonCanvas(canvas);
-  undoSnapshot(seite);
+  if (tab.type === 'pdf') tab.aktiveSeite = seite;
 
   if (Z.werkzeug === 'gerade-linie') {
     Z.geradeLinieStart = { ...p };
@@ -1238,11 +1308,10 @@ function strichStarten(e, canvas) {
   }
 
   if (Z.werkzeug === 'textmarker') {
-    const dpr = KONFIGURATION.ZEICHEN_DPR;
     const off = document.createElement('canvas');
     off.width = canvas.width; off.height = canvas.height;
     const offCtx = off.getContext('2d');
-    offCtx.scale(dpr, dpr);
+    offCtx.setTransform(canvas.getContext('2d').getTransform());
     offCtx.lineCap = 'round'; offCtx.lineJoin = 'round';
     offCtx.lineWidth = Z.strichbreite;
     offCtx.strokeStyle = Z.strichfarbe;
@@ -1280,11 +1349,8 @@ function strichBewegen(e, canvas) {
       Z.modus !== 'scrollen' &&
       Z.fokusModus !== 'oval' && Z.fokusModus !== 'rechteck' && Z.fokusModus !== 'laser';
     if (kontaktAktiv && werkzeugErlaubtStart && !(Z.nurStiftZeichnet && istHandflaeche(e))) {
-      debugStiftLog('🩹 Selbstheilung: pointerdown fehlte, Start via pointermove', e); // 🐞 DEBUG
       strichStarten(e, canvas);
       return; // strichStarten hat bereits den ersten Punkt gesetzt und gezeichnet
-    } else if (kontaktAktiv) {
-      debugStiftLog('❌ Selbstheilung verweigert (Modus/Handballen)', e); // 🐞 DEBUG
     }
   }
 
@@ -1311,9 +1377,8 @@ function strichBewegen(e, canvas) {
     offCtx.stroke();
     const ctx = canvas.getContext('2d');
     vorschauBasisWiederherstellen(ctx, canvas, Z.aktuellerStrich.basisSnapshot);
-    const dpr = KONFIGURATION.ZEICHEN_DPR;
     ctx.globalAlpha = KONFIGURATION.TEXTMARKER_ALPHA;
-    ctx.drawImage(Z.aktuellerStrich.offCanvas, 0, 0, canvas.width / dpr, canvas.height / dpr);
+    bildDeckungsgleich(ctx, Z.aktuellerStrich.offCanvas);
     ctx.globalAlpha = 1;
     Z.aktuellerStrich.punkte.push({ ...p });
   } else {
@@ -1338,40 +1403,45 @@ function strichBewegen(e, canvas) {
 function strichAbschliessen(canvas, endPunkt) {
   const tab = aktuellerTab();
   if (tab) {
+    const seite = seiteVonCanvas(canvas);
+    const ctx = canvas.getContext('2d');
+    let neu = null;
     if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
       const pEnd = endPunkt || Z.letzterPunkt || Z.geradeLinieStart;
-      const seite = seiteVonCanvas(canvas);
-      const ctx = canvas.getContext('2d');
       if (Z.geradeLinieBasis) vorschauBasisWiederherstellen(ctx, canvas, Z.geradeLinieBasis);
-      geradeLinieZeichnen(ctx, Z.geradeLinieStart, pEnd, Z.strichfarbe, Z.strichbreite, Z.linienstil);
-      if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-      tab.annotationen[seite].push({
-        werkzeug: 'gerade-linie',
-        punkte: [Z.geradeLinieStart, pEnd],
-        farbe: Z.strichfarbe,
-        breite: Z.strichbreite,
-        linienstil: Z.linienstil,
-      });
+      // Bloßes Antippen erzeugt keine (unsichtbare) Linie
+      if (Math.hypot(pEnd.x - Z.geradeLinieStart.x, pEnd.y - Z.geradeLinieStart.y) >= 2) {
+        geradeLinieZeichnen(ctx, Z.geradeLinieStart, pEnd, Z.strichfarbe, Z.strichbreite, Z.linienstil);
+        neu = {
+          werkzeug: 'gerade-linie', punkte: [Z.geradeLinieStart, pEnd],
+          farbe: Z.strichfarbe, breite: Z.strichbreite, linienstil: Z.linienstil,
+        };
+      }
     } else if (Z.werkzeug === 'textmarker' && Z.aktuellerStrich?.offCanvas) {
-      const seite = seiteVonCanvas(canvas);
-      if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-      tab.annotationen[seite].push({
-        punkte: Z.aktuellerStrich.punkte,
-        farbe: Z.aktuellerStrich.farbe,
-        breite: Z.aktuellerStrich.breite,
-        werkzeug: 'textmarker',
-        alpha: Z.aktuellerStrich.alpha,
-      });
-      canvasNeuZeichnen(seite);
+      const s = Z.aktuellerStrich;
+      neu = { punkte: s.punkte, farbe: s.farbe, breite: s.breite, werkzeug: 'textmarker', alpha: s.alpha };
     } else if (Z.aktuellerStrich) {
-      const seite = seiteVonCanvas(canvas);
+      neu = Z.aktuellerStrich;
+    }
+    if (neu) {
+      undoSnapshot(seite);
       if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-      tab.annotationen[seite].push(Z.aktuellerStrich);
+      tab.annotationen[seite].push(neu);
+      // Marker sauber neu aufbauen; einzelne Punkte (i-Punkt) sichtbar machen
+      if (neu.werkzeug === 'textmarker') canvasNeuZeichnen(seite);
+      else if (neu.punkte.length === 1) punktZeichnen(ctx, neu.punkte[0], neu.farbe, neu.breite);
+      autoSpeichernPlanen();
     }
   }
   if (POINTER_CAPTURE_AKTIV) { try { if (Z.aktiverPointerId !== null) canvas.releasePointerCapture(Z.aktiverPointerId); } catch (_) {} }
+  strichZustandZuruecksetzen();
+}
+
+function strichZustandZuruecksetzen() {
+  if (Z.zeichenTyp === 'pen') Z.letzterStiftZeit = Date.now();
   Z.zeichnet = false;
   Z.aktiverPointerId = null;
+  Z.zeichenTyp = null;
   Z.aktuellerStrich = null;
   Z.geradeLinieStart = null;
   Z.geradeLinieBasis = null;
@@ -1382,16 +1452,25 @@ function strichAbschliessen(canvas, endPunkt) {
 function strichBeenden(e, canvas) {
   if (Z.fokusModus === 'laser') { laserBeenden(); return; }
   if (!Z.zeichnet || e.pointerId !== Z.aktiverPointerId) {
-    debugStiftLog('⚠️ pointerup ohne passenden aktiven Strich (ins Leere)', e); // 🐞 DEBUG
     return;
   }
-  debugStiftLog('✅ Strich beendet', e); // 🐞 DEBUG
   e.preventDefault();
 
   let pEnd = null;
   if (Z.werkzeug === 'gerade-linie' && Z.geradeLinieStart) {
     pEnd = koordinaten(e, canvas);
     pEnd = linealUndGeoSnap(e, canvas, pEnd);
+  } else if (e.type === 'pointerup' && Z.aktuellerStrich) {
+    // Die Glättung hinkt hinterher: Strich bis zum Absetzpunkt verlängern
+    const ende = linealUndGeoSnap(e, canvas, koordinaten(e, canvas));
+    const s = Z.aktuellerStrich;
+    const letzter = s.punkte[s.punkte.length - 1];
+    if (s.punkte.length > 1 && Math.hypot(ende.x - letzter.x, ende.y - letzter.y) > 0.5) {
+      const ctx = s.offCtx || canvas.getContext('2d');
+      if (!s.offCtx) { ctx.strokeStyle = s.farbe; ctx.lineWidth = s.breite; ctx.lineCap = 'round'; }
+      ctx.beginPath(); ctx.moveTo(letzter.x, letzter.y); ctx.lineTo(ende.x, ende.y); ctx.stroke();
+      s.punkte.push({ ...ende });
+    }
   }
   strichAbschliessen(canvas, pEnd);
 }
@@ -1415,24 +1494,27 @@ function zeichenListeners(canvas) {
 function stricheZeichnen(ctx, striche) {
   if (!striche?.length) return;
   striche.forEach(s => {
-    if (!s.punkte?.length) return;
+    if (!s?.punkte?.length) return;
+    if (s.punkte.length === 1 && s.werkzeug !== 'textmarker' && s.werkzeug !== 'gerade-linie') {
+      punktZeichnen(ctx, s.punkte[0], s.farbe, s.breite); return;
+    }
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = s.breite;
     if (s.werkzeug === 'gerade-linie') {
       geradeLinieZeichnen(ctx, s.punkte[0], s.punkte[1], s.farbe, s.breite, s.linienstil ?? 'solid');
     } else if (s.werkzeug === 'textmarker') {
-      const dpr = KONFIGURATION.ZEICHEN_DPR;
       const off = document.createElement('canvas');
       off.width = ctx.canvas.width; off.height = ctx.canvas.height;
       const offCtx = off.getContext('2d');
-      offCtx.scale(dpr, dpr);
+      offCtx.setTransform(ctx.getTransform());
       offCtx.lineCap = 'round'; offCtx.lineJoin = 'round';
       offCtx.lineWidth = s.breite; offCtx.strokeStyle = s.farbe;
       offCtx.beginPath(); offCtx.moveTo(s.punkte[0].x,s.punkte[0].y);
       for (let i=1;i<s.punkte.length;i++) offCtx.lineTo(s.punkte[i].x,s.punkte[i].y);
       offCtx.stroke();
       ctx.globalAlpha = s.alpha ?? KONFIGURATION.TEXTMARKER_ALPHA;
-      ctx.drawImage(off, 0, 0, ctx.canvas.width / dpr, ctx.canvas.height / dpr);
+      bildDeckungsgleich(ctx, off);
       ctx.globalAlpha = 1;
+      off.width = 0; off.height = 0; // Speicher auf dem iPad sofort freigeben
     } else {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = s.farbe; ctx.globalAlpha = 1;
@@ -1513,12 +1595,9 @@ function laserModeAus() {
 function undoSnapshot(seite) {
   const tab = aktuellerTab(); if (!tab) return;
   if (!tab.undoVerlauf[seite]) tab.undoVerlauf[seite] = [];
-  const anzahl = tab.annotationen[seite]?.length ?? 0;
   const v = tab.undoVerlauf[seite];
-  if (v.length === 0 || v[v.length - 1] !== anzahl) {
-    v.push(anzahl);
-    if (v.length > 50) v.shift();
-  }
+  v.push((tab.annotationen[seite] || []).slice());
+  if (v.length > 50) v.shift();
   tab.redoVerlauf[seite] = [];
 }
 
@@ -1526,7 +1605,7 @@ function canvasNeuZeichnen(seite) {
   const canvas = zeichenCanvasAktiv(seite);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvasLeeren(canvas);
   const tab = aktuellerTab(); if (!tab) return;
   const striche = tab.annotationen[seite];
   if (striche?.length) stricheZeichnen(ctx, striche);
@@ -1536,38 +1615,29 @@ function canvasNeuZeichnenAktuellerTab() {
   canvasNeuZeichnen(aktuelleSeite());
 }
 
-function undoAusfuehren() {
-  const tab = aktuellerTab(); if (!tab) return;
+function verlaufSchritt(von, nach, leerText) {
+  const tab = aktuellerTab(); if (!tab || Z.zeichnet) return;
   const seite = aktuelleSeite();
-  if (!tab.undoVerlauf[seite]?.length) { toast('Kein Rückgängig-Schritt.', 'info', 1500); return; }
-  if (!tab.redoVerlauf[seite]) tab.redoVerlauf[seite] = [];
-  tab.redoVerlauf[seite].push(tab.annotationen[seite]?.length ?? 0);
-  const ziel = tab.undoVerlauf[seite].pop();
-  if (!tab.annotationen[seite]) tab.annotationen[seite] = [];
-  tab.annotationen[seite].length = ziel;
+  if (!tab[von][seite]?.length) { toast(leerText, 'info', 1500); return; }
+  if (!tab[nach][seite]) tab[nach][seite] = [];
+  tab[nach][seite].push((tab.annotationen[seite] || []).slice());
+  tab.annotationen[seite] = tab[von][seite].pop();
   canvasNeuZeichnen(seite);
+  autoSpeichernPlanen();
 }
-
-function redoAusfuehren() {
-  const tab = aktuellerTab(); if (!tab) return;
-  const seite = aktuelleSeite();
-  if (!tab.redoVerlauf[seite]?.length) { toast('Kein Wiederholen-Schritt.', 'info', 1500); return; }
-  if (!tab.undoVerlauf[seite]) tab.undoVerlauf[seite] = [];
-  tab.undoVerlauf[seite].push(tab.annotationen[seite]?.length ?? 0);
-  const ziel = tab.redoVerlauf[seite].pop();
-  if (tab.annotationen[seite]) tab.annotationen[seite].length = ziel;
-  canvasNeuZeichnen(seite);
-}
+function undoAusfuehren() { verlaufSchritt('undoVerlauf', 'redoVerlauf', 'Kein Rückgängig-Schritt.'); }
+function redoAusfuehren() { verlaufSchritt('redoVerlauf', 'undoVerlauf', 'Kein Wiederholen-Schritt.'); }
 
 function seiteLeeren() {
   const tab = aktuellerTab(); if (!tab) return;
   const seite = aktuelleSeite();
   const label = tab.type === 'pdf' ? `Seite ${seite}` : `"${tab.name}"`;
+  if (!tab.annotationen[seite]?.length) { toast(`${label} ist schon leer.`, 'info', 1500); return; }
   if (!window.confirm(`Alle Annotationen auf ${label} löschen?`)) return;
   undoSnapshot(seite);
-  const canvas = zeichenCanvasAktiv(seite);
-  if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   tab.annotationen[seite] = [];
+  canvasNeuZeichnen(seite);
+  autoSpeichernPlanen();
   toast(`${label} geleert.`, 'info');
 }
 
@@ -1664,39 +1734,35 @@ function geodreieckSnap(e, canvas) {
     D.geoFuehrung.setAttribute('y1', best.y);
     D.geoFuehrung.setAttribute('x2', best.x);
     D.geoFuehrung.setAttribute('y2', best.y);
-    const rect = canvas.getBoundingClientRect();
-    const dpr = KONFIGURATION.ZEICHEN_DPR;
-    const skalX = (canvas.width/rect.width)/dpr, skalY = (canvas.height/rect.height)/dpr;
-    return { x: (best.x-rect.left)*skalX, y: (best.y-rect.top)*skalY };
+    return clientZuCanvas(best.x, best.y, canvas);
   }
   D.geoFuehrung.setAttribute('display', 'none');
   return null;
 }
 
-function geodreieckKantenClient() {
-  const B = D.geoBild.offsetWidth;
-  const H = D.geoBild.offsetHeight;
-  const winRad = Z.geoWinkel * Math.PI / 180;
-  const cos = Math.cos(winRad), sin = Math.sin(winRad);
-  const pivotX = B / 2, pivotY = H;
+/** Bildschirm-Position der linken oberen Ecke eines (ungedrehten)
+ *  Werkzeugs: Hauptbereich + CSS-Grundposition + Verschiebung. */
+function werkzeugUrsprung(wrapper, pos) {
+  const basis = wrapper.offsetParent.getBoundingClientRect();
+  return { x: basis.left + wrapper.offsetLeft + pos.x, y: basis.top + wrapper.offsetTop + pos.y };
+}
 
-  const eckenBild = [
-    { x: B / 2, y: 0 },
-    { x: 0,     y: H },
-    { x: B,     y: H },
-  ];
-
-  const ursprungX = Z.geoPos.x;
-  const ursprungY = Z.geoPos.y;
-
-  const punkte = eckenBild.map(p => {
-    const rx = p.x - pivotX;
-    const ry = p.y - pivotY;
-    const gx = rx * cos - ry * sin;
-    const gy = rx * sin + ry * cos;
-    return { x: ursprungX + pivotX + gx, y: ursprungY + pivotY + gy };
+/** Dreht Punkte (relativ zum Werkzeug) um den Drehpunkt in Bildschirm-Koordinaten. */
+function werkzeugPunkte(wrapper, pos, winkel, pivot, ecken) {
+  const rad = winkel * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+  const u = werkzeugUrsprung(wrapper, pos);
+  return ecken.map(p => {
+    const rx = p.x - pivot.x, ry = p.y - pivot.y;
+    return { x: u.x + pivot.x + rx * cos - ry * sin, y: u.y + pivot.y + rx * sin + ry * cos };
   });
+}
 
+function geodreieckKantenClient() {
+  // parseFloat statt offsetWidth: funktioniert auch mit dem SVG-Ersatzbild
+  const B = parseFloat(D.geoBild.style.width);
+  const H = parseFloat(D.geoBild.style.height);
+  const punkte = werkzeugPunkte(D.geoWrapper, Z.geoPos, Z.geoWinkel, { x: B / 2, y: H },
+    [{ x: B / 2, y: 0 }, { x: 0, y: H }, { x: B, y: H }]);
   return [
     { p1: punkte[0], p2: punkte[1], name: 'kathete-links'  },
     { p1: punkte[1], p2: punkte[2], name: 'basis'          },
@@ -1704,46 +1770,48 @@ function geodreieckKantenClient() {
   ];
 }
 
-function geodreieckInit() {
-  function geoMoveStart(cx, cy) {
-    Z.geoDrag = { art: 'move', startX: cx, startY: cy, startPos: { ...Z.geoPos } };
-  }
-  D.geoMoveGriff.addEventListener('touchstart', e => {
-    if (!Z.geodreieckAktiv) return;
+/** Verschieben/Drehen eines Werkzeugs per Maus oder genau EINEM Finger/Stift. */
+function griffBinden(griff, istAktiv, starten, bewegen, beenden) {
+  let fingerId = null;
+  const eigener = liste => Array.from(liste).find(t => t.identifier === fingerId);
+  griff.addEventListener('touchstart', e => {
+    if (!istAktiv()) return;
     e.preventDefault(); e.stopPropagation();
-    geoMoveStart(e.touches[0].clientX, e.touches[0].clientY);
+    const t = e.changedTouches[0];
+    fingerId = t.identifier;
+    starten(t.clientX, t.clientY);
   }, { passive: false });
-  D.geoMoveGriff.addEventListener('mousedown', e => {
-    if (!Z.geodreieckAktiv) return;
+  griff.addEventListener('mousedown', e => {
+    if (!istAktiv()) return;
     e.preventDefault(); e.stopPropagation();
-    geoMoveStart(e.clientX, e.clientY);
+    starten(e.clientX, e.clientY);
   });
-
-  function geoRotateStart(cx, cy) {
-    const wRect = D.geoWrapper.getBoundingClientRect();
-    const pivotX = wRect.left + wRect.width / 2;
-    const pivotY = wRect.bottom;
-    Z.geoDrag = { art: 'rotate', pivotX, pivotY, startWinkel: winkelZwischen(pivotX, pivotY, cx, cy) - Z.geoWinkel };
-  }
-  D.geoDrehGriff.addEventListener('touchstart', e => {
-    if (!Z.geodreieckAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    geoRotateStart(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: false });
-  D.geoDrehGriff.addEventListener('mousedown', e => {
-    if (!Z.geodreieckAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    geoRotateStart(e.clientX, e.clientY);
-  });
-
   document.addEventListener('touchmove', e => {
-    if (!Z.geoDrag) return;
+    if (fingerId === null) return;
+    const t = eigener(e.changedTouches);
+    if (!t) return;
     e.preventDefault();
-    _geoBewegen(e.touches[0].clientX, e.touches[0].clientY);
+    bewegen(t.clientX, t.clientY);
   }, { passive: false });
-  document.addEventListener('mousemove', e => { if (Z.geoDrag) _geoBewegen(e.clientX, e.clientY); });
-  document.addEventListener('touchend',  () => { Z.geoDrag = null; });
-  document.addEventListener('mouseup',   () => { Z.geoDrag = null; });
+  const ende = e => { if (fingerId !== null && eigener(e.changedTouches)) { fingerId = null; beenden(); } };
+  document.addEventListener('touchend', ende);
+  document.addEventListener('touchcancel', ende);
+  document.addEventListener('mousemove', e => { if (fingerId === null) bewegen(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', () => { if (fingerId === null) beenden(); });
+}
+
+function geodreieckInit() {
+  const aktiv = () => Z.geodreieckAktiv;
+  const beenden = () => { Z.geoDrag = null; };
+  griffBinden(D.geoMoveGriff, aktiv,
+    (cx, cy) => { Z.geoDrag = { art: 'move', startX: cx, startY: cy, startPos: { ...Z.geoPos } }; },
+    (cx, cy) => { if (Z.geoDrag?.art === 'move') _geoBewegen(cx, cy); }, beenden);
+  griffBinden(D.geoDrehGriff, aktiv, (cx, cy) => {
+    const B = parseFloat(D.geoBild.style.width), H = parseFloat(D.geoBild.style.height);
+    const u = werkzeugUrsprung(D.geoWrapper, Z.geoPos);
+    const pivotX = u.x + B / 2, pivotY = u.y + H;
+    Z.geoDrag = { art: 'rotate', pivotX, pivotY, startWinkel: winkelZwischen(pivotX, pivotY, cx, cy) - Z.geoWinkel };
+  }, (cx, cy) => { if (Z.geoDrag?.art === 'rotate') _geoBewegen(cx, cy); }, beenden);
 }
 
 function _geoBewegen(cx, cy) {
@@ -1832,10 +1900,7 @@ function linealSnap(e, canvas) {
     D.geoFuehrung.setAttribute('y1', proj.y);
     D.geoFuehrung.setAttribute('x2', proj.x);
     D.geoFuehrung.setAttribute('y2', proj.y);
-    const rect = canvas.getBoundingClientRect();
-    const dpr = KONFIGURATION.ZEICHEN_DPR;
-    const skalX = (canvas.width/rect.width)/dpr, skalY = (canvas.height/rect.height)/dpr;
-    return { x: (proj.x-rect.left)*skalX, y: (proj.y-rect.top)*skalY };
+    return clientZuCanvas(proj.x, proj.y, canvas);
   }
   D.geoFuehrung.setAttribute('display', 'none');
   return null;
@@ -1844,65 +1909,22 @@ function linealSnap(e, canvas) {
 function linealKanteClient() {
   const B = D.linealBalken.offsetWidth;
   const H = D.linealBalken.offsetHeight;
-  const winRad = Z.linealWinkel * Math.PI / 180;
-  const cos = Math.cos(winRad), sin = Math.sin(winRad);
-  const pivotX = B / 2, pivotY = H / 2;
-
-  const eckenBalken = [{ x: 0, y: 0 }, { x: B, y: 0 }];
-  const ursprungX = Z.linealPos.x;
-  const ursprungY = Z.linealPos.y;
-
-  const punkte = eckenBalken.map(p => {
-    const rx = p.x - pivotX;
-    const ry = p.y - pivotY;
-    const gx = rx * cos - ry * sin;
-    const gy = rx * sin + ry * cos;
-    return { x: ursprungX + pivotX + gx, y: ursprungY + pivotY + gy };
-  });
-
-  return { p1: punkte[0], p2: punkte[1] };
+  const [p1, p2] = werkzeugPunkte(D.linealWrapper, Z.linealPos, Z.linealWinkel, { x: B / 2, y: H / 2 },
+    [{ x: 0, y: 0 }, { x: B, y: 0 }]);
+  return { p1, p2 };
 }
 
 function linealInit() {
-  function linealMoveStart(cx, cy) {
-    Z.linealDrag = { art: 'move', startX: cx, startY: cy, startPos: { ...Z.linealPos } };
-  }
-  D.linealMoveGriff.addEventListener('touchstart', e => {
-    if (!Z.linealAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    linealMoveStart(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: false });
-  D.linealMoveGriff.addEventListener('mousedown', e => {
-    if (!Z.linealAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    linealMoveStart(e.clientX, e.clientY);
-  });
-
-  function linealRotateStart(cx, cy) {
-    const wRect = D.linealWrapper.getBoundingClientRect();
-    const pivotX = wRect.left + wRect.width / 2;
-    const pivotY = wRect.top + wRect.height / 2;
+  const aktiv = () => Z.linealAktiv;
+  const beenden = () => { Z.linealDrag = null; };
+  griffBinden(D.linealMoveGriff, aktiv,
+    (cx, cy) => { Z.linealDrag = { art: 'move', startX: cx, startY: cy, startPos: { ...Z.linealPos } }; },
+    (cx, cy) => { if (Z.linealDrag?.art === 'move') _linealBewegen(cx, cy); }, beenden);
+  griffBinden(D.linealDrehGriff, aktiv, (cx, cy) => {
+    const u = werkzeugUrsprung(D.linealWrapper, Z.linealPos);
+    const pivotX = u.x + D.linealBalken.offsetWidth / 2, pivotY = u.y + D.linealBalken.offsetHeight / 2;
     Z.linealDrag = { art: 'rotate', pivotX, pivotY, startWinkel: winkelZwischen(pivotX, pivotY, cx, cy) - Z.linealWinkel };
-  }
-  D.linealDrehGriff.addEventListener('touchstart', e => {
-    if (!Z.linealAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    linealRotateStart(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: false });
-  D.linealDrehGriff.addEventListener('mousedown', e => {
-    if (!Z.linealAktiv) return;
-    e.preventDefault(); e.stopPropagation();
-    linealRotateStart(e.clientX, e.clientY);
-  });
-
-  document.addEventListener('touchmove', e => {
-    if (!Z.linealDrag) return;
-    e.preventDefault();
-    _linealBewegen(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: false });
-  document.addEventListener('mousemove', e => { if (Z.linealDrag) _linealBewegen(e.clientX, e.clientY); });
-  document.addEventListener('touchend',  () => { Z.linealDrag = null; });
-  document.addEventListener('mouseup',   () => { Z.linealDrag = null; });
+  }, (cx, cy) => { if (Z.linealDrag?.art === 'rotate') _linealBewegen(cx, cy); }, beenden);
 }
 
 function _linealBewegen(cx, cy) {
@@ -2058,19 +2080,28 @@ function zoomInit() {
   D.btnZoomMinus.addEventListener('click', () => { const t=aktuellerTab(); if(t) zoomSetzen((t.zoom||1)-KONFIGURATION.ZOOM_SCHRITT); });
   D.btnZoomReset.addEventListener('click', () => zoomSetzen(1.0));
 
+  // Beim Schreiben mit dem Stift (und kurz danach) darf eine aufliegende
+  // Hand weder zoomen noch den laufenden Strich verwerfen.
+  const stiftSchreibt = e =>
+    (Z.zeichnet && Z.zeichenTyp === 'pen') || Date.now() - Z.letzterStiftZeit < 500 ||
+    Array.from(e.touches).some(t => t.touchType === 'stylus');
   D.zoomWrapper.addEventListener('touchstart', e => {
-    if (e.touches.length===2) {
-      Z.pinch = null;
-      if (Z.zeichnet) {
-        Z.zeichnet = false; Z.aktuellerStrich = null; Z.aktiverPointerId = null;
-        Z.geradeLinieStart = null; Z.geradeLinieBasis = null; Z.letzterPunkt = null;
-      }
+    if (e.touches.length !== 2 || stiftSchreibt(e)) return;
+    Z.pinch = null;
+    if (Z.zeichnet) { // Fingerstrich abbrechen: es wird gezoomt
+      strichZustandZuruecksetzen();
+      D.pdfContainer.querySelectorAll('.seite-container .zeichen-canvas')
+        .forEach(c => canvasNeuZeichnen(seiteVonCanvas(c)));
     }
   }, { passive: false });
   D.zoomWrapper.addEventListener('touchmove', e => {
-    if (e.touches.length===2&&Z.modus==='zeichnen') { e.preventDefault(); pinchBewegen(e); }
+    if (e.touches.length !== 2 || Z.modus !== 'zeichnen') return;
+    e.preventDefault();
+    if (stiftSchreibt(e)) { Z.pinch = null; return; }
+    pinchBewegen(e);
   }, { passive: false });
   D.zoomWrapper.addEventListener('touchend', () => { if(Z.pinch) Z.pinch=null; }, { passive:true });
+  D.zoomWrapper.addEventListener('scroll', aktiveSeiteErmitteln, { passive: true });
   D.zoomWrapper.addEventListener('wheel', e => {
     if (e.ctrlKey||e.metaKey) {
       const tab = aktuellerTab(); if (!tab || tab.type !== 'pdf') return;
@@ -2115,14 +2146,15 @@ function tabErzeugenPdf(name) {
   };
 }
 function naechsterTafelName() {
-  const n = Z.tabs.filter(t => t.type === 'tafel').length + 1;
-  return 'Tafel ' + n;
+  const nummern = Z.tabs.map(t => +(/^Tafel (\d+)$/.exec(t.name)?.[1] || 0));
+  return 'Tafel ' + (Math.max(0, ...nummern) + 1);
 }
 
 function tabHinzufuegen(tab, aktivieren = true) {
   Z.tabs.push(tab);
   tabsRendern();
   if (aktivieren) tabAktivieren(tab.id);
+  autoSpeichernPlanen();
 }
 
 function tabAktivieren(id) {
@@ -2145,8 +2177,6 @@ function tabAbbauen(id) {
   if (!tab) return;
   if (tab.type === 'tafel') {
     tafelStatusSichern(tab);
-    Object.keys(Z.widgetTimers).forEach(k => { if (Z.widgetTimers[k].interval) clearInterval(Z.widgetTimers[k].interval); });
-    Z.widgetTimers = {};
     Z.wheelData = {};
     D.tafelWidgetsLayer.innerHTML = '';
     D.kindergarten.innerHTML = '';
@@ -2214,7 +2244,7 @@ function tabsRendern() {
 function tabUmbenennen(id) {
   const tab = Z.tabs.find(t => t.id === id); if (!tab) return;
   const neu = window.prompt('Name:', tab.name);
-  if (neu && neu.trim()) { tab.name = neu.trim(); tabsRendern(); }
+  if (neu && neu.trim()) { tab.name = neu.trim(); tabsRendern(); autoSpeichernPlanen(); }
 }
 
 function tabSchliessen(id) {
@@ -2224,6 +2254,8 @@ function tabSchliessen(id) {
   const warAktiv = id === Z.aktiverTabId;
   if (warAktiv) tabAbbauen(id);
   Z.tabs = Z.tabs.filter(t => t.id !== id);
+  (tab.widgets || []).forEach(w => timerEntfernen(w.id));
+  autoSpeichernPlanen();
   if (warAktiv) {
     Z.aktiverTabId = null;
     tabAktivieren(Z.tabs[0].id);
@@ -2266,24 +2298,25 @@ function tafelCanvasAufbauen(tab) {
   const W = Math.floor(rect.width), H = Math.floor(rect.height);
   if (W <= 0 || H <= 0) return;
 
-  // Bereits vorhandene Striche proportional an neue Fläche anpassen
-  // (z.B. bei Bildschirmdrehung), analog zu Klassenzimmer-Board.
-  if (tab.groesse && tab.groesse.w > 0 && tab.groesse.h > 0 &&
-      (tab.groesse.w !== W || tab.groesse.h !== H)) {
-    const sx = W / tab.groesse.w, sy = H / tab.groesse.h;
-    (tab.annotationen[1] || []).forEach(str => {
-      if (str.punkte) str.punkte.forEach(p => { p.x *= sx; p.y *= sy; });
-    });
-  }
   tab.groesse = { w: W, h: H };
+
+  // Die Striche selbst werden nie verändert. Passen sie (z.B. im
+  // Hochformat) nicht auf die Fläche, wird nur die Darstellung
+  // gleichmäßig verkleinert.
+  let maxX = 0, maxY = 0;
+  (tab.annotationen[1] || []).forEach(s => s.punkte?.forEach(p => {
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }));
+  const skala = Math.min(1, W / (maxX || 1), H / (maxY || 1));
+  D.tafelCanvas._skala = skala;
 
   D.tafelCanvas.width  = W * dpr;
   D.tafelCanvas.height = H * dpr;
   D.tafelCanvas.style.width  = `${W}px`;
   D.tafelCanvas.style.height = `${H}px`;
   const ctx = D.tafelCanvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr * skala, 0, 0, dpr * skala, 0, 0);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
@@ -2321,13 +2354,10 @@ function tafelStatusSichern(tab) {
       id: w.id, type: t, x: w.style.left, y: w.style.top, w: w.style.width, h: w.style.height,
       val: v, theme: w.classList.contains('theme-dark') ? 'dark' : 'sepia',
       fullsize: w.classList.contains('fullsize'),
+      hidden: w.classList.contains('hidden'),
     });
   });
   tab.widgets = widgetData;
-  if (Z.notizenOffen === false) {
-    // Notiz wird schon bei jedem Tippen live gespeichert (notizenSpeichern),
-    // hier nur zur Sicherheit falls das Panel nie geöffnet wurde.
-  }
 }
 
 
@@ -2351,6 +2381,20 @@ function pdfSeitenNormalisieren(pdfDoc) {
     }
   }
   return veraendert;
+}
+
+/** Holt den Worker über die Seite selbst (damit der Service Worker ihn
+ *  zwischenspeichert) und startet ihn aus einer lokalen Blob-Adresse. */
+async function pdfWorkerVorbereiten() {
+  if (pdfjsLib.GlobalWorkerOptions.workerSrc) return;
+  try {
+    const antwort = await fetch(KONFIGURATION.PDFJS_WORKER);
+    if (!antwort.ok) throw new Error(antwort.status);
+    const code = await antwort.blob();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+  } catch (_) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = KONFIGURATION.PDFJS_WORKER;
+  }
 }
 
 /** Lädt eine Datei erstmalig in einen (bereits erzeugten, aktiven) PDF-Tab. */
@@ -2386,7 +2430,7 @@ async function pdfTabAufbauen(tab) {
   ladeAnzeige(true, `"${tab.name}" wird geöffnet...`);
   try {
     if (!tab.pdfDokument) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = KONFIGURATION.PDFJS_WORKER;
+      await pdfWorkerVorbereiten();
       tab.pdfDokument = await pdfjsLib.getDocument({ data: tab.pdfBytes.slice() }).promise;
       tab.seitenAnzahl = tab.pdfDokument.numPages;
     }
@@ -2405,6 +2449,7 @@ async function pdfTabAufbauen(tab) {
     requestAnimationFrame(() => zoomZentrierungAktualisieren());
     if (Z.geodreieckAktiv) geodreieckSkalieren();
     if (Z.linealAktiv) linealSkalieren();
+    tab.aktiveSeite = 1;
   } catch (err) {
     console.error('[EduLayer] PDF-Aufbaufehler:', err);
     toast('Fehler beim Öffnen des Tabs.', 'fehler', 4000);
@@ -2479,24 +2524,24 @@ async function seiteContainerAufbauen(tab, nr, container) {
   }
 
   tab.gerenderteSeitenCanvas.add(nr);
-  seitenSichtbarkeitBeobachten(tab, container, nr);
   seitenEntladungBeobachten(tab, container, nr);
 }
 
-function seitenSichtbarkeitBeobachten(tab, container, nr) {
-  const observer = new IntersectionObserver(ee => {
-    if (tab.id !== Z.aktiverTabId) return;
-    ee.forEach(e => {
-      if (e.isIntersecting && e.intersectionRatio >= 0.4) {
-        const seiteAlt = tab.aktiveSeite;
-        tab.aktiveSeite = nr;
-        if (Z.geodreieckAktiv && seiteAlt !== nr) geodreieckSkalieren();
-        if (Z.linealAktiv && seiteAlt !== nr) linealSkalieren();
-      }
-    });
-  }, { root: D.zoomWrapper, threshold: 0.4 });
-  container._obsSichtbarkeit = observer;
-  observer.observe(container);
+function aktiveSeiteErmitteln() {
+  const tab = aktuellerTab();
+  if (!tab || tab.type !== 'pdf' || Z.notizenOffen) return;
+  const sicht = D.zoomWrapper.getBoundingClientRect();
+  let beste = null, hoehe = 0;
+  D.pdfContainer.querySelectorAll('.seite-container').forEach(c => {
+    const r = c.getBoundingClientRect();
+    const h = Math.min(r.bottom, sicht.bottom) - Math.max(r.top, sicht.top);
+    if (h > hoehe) { hoehe = h; beste = +c.dataset.seite; }
+  });
+  if (beste && beste !== tab.aktiveSeite) {
+    tab.aktiveSeite = beste;
+    if (Z.geodreieckAktiv) geodreieckSkalieren();
+    if (Z.linealAktiv) linealSkalieren();
+  }
 }
 
 function seitenEntladungBeobachten(tab, container, nr) {
@@ -2564,33 +2609,41 @@ function hexZuRgbNormiert(hex) {
 const EXPORT_DASH_MUSTER = {
   solid: null, dashed: [4, 2.5], dotted: [0.5, 2.5], 'dash-dot': [5, 2, 0.5, 2],
 };
-function strichInPdfZeichnen(pdfSeite, strich, W, H, pdfB, pdfH) {
+/** umrechnen: Bildschirm-Punkt -> PDF-Punkt (berücksichtigt Drehung und
+ *  Beschnitt der Seite). skala: Faktor für Strichbreiten. */
+function strichInPdfZeichnen(pdfSeite, strich, umrechnen, skala) {
+  if (!strich?.punkte?.length) return;
   const { r, g, b } = hexZuRgbNormiert(strich.farbe);
   const farbe = PDFLib.rgb(r, g, b);
-  const skalaX = pdfB / W, skalaY = pdfH / H;
-  const skala  = (skalaX + skalaY) / 2;
-  const umrechnen = p => ({ x: p.x * skalaX, y: pdfH - p.y * skalaY });
+  const dicke = strich.breite * skala;
 
   if (strich.werkzeug === 'gerade-linie') {
     const [von, bis] = strich.punkte;
     const muster = EXPORT_DASH_MUSTER[strich.linienstil ?? 'solid'];
     pdfSeite.drawLine({
       start: umrechnen(von), end: umrechnen(bis),
-      thickness: strich.breite * skala, color: farbe, opacity: 1,
-      dashArray: muster ? muster.map(w => w * strich.breite * skala) : undefined,
+      thickness: dicke, color: farbe, opacity: 1,
+      dashArray: muster ? muster.map(w => w * dicke) : undefined,
       lineCap: PDFLib.LineCapStyle.Round,
     });
     return;
   }
-  if (!strich.punkte || strich.punkte.length < 2) return;
-  const deckkraft = strich.werkzeug === 'textmarker' ? (strich.alpha ?? KONFIGURATION.TEXTMARKER_ALPHA) : 1;
-  for (let i = 0; i < strich.punkte.length - 1; i++) {
-    pdfSeite.drawLine({
-      start: umrechnen(strich.punkte[i]), end: umrechnen(strich.punkte[i + 1]),
-      thickness: strich.breite * skala, color: farbe, opacity: deckkraft,
-      lineCap: PDFLib.LineCapStyle.Round,
-    });
+  const marker = strich.werkzeug === 'textmarker';
+  const deckkraft = marker ? (strich.alpha ?? KONFIGURATION.TEXTMARKER_ALPHA) : 1;
+  const pts = strich.punkte.map(umrechnen);
+  if (pts.length === 1) {
+    if (!marker) pdfSeite.drawCircle({ x: pts[0].x, y: pts[0].y, size: dicke / 2, color: farbe });
+    return;
   }
+  // Ein zusammenhängender Pfad: keine dunklen Flecken beim Textmarker.
+  // drawSvgPath spiegelt die y-Achse, daher -y.
+  const pfad = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(2)} ${(-p.y).toFixed(2)}`).join(' ');
+  pdfSeite.pushOperators(PDFLib.pushGraphicsState(), PDFLib.setLineJoin(PDFLib.LineJoinStyle.Round));
+  pdfSeite.drawSvgPath(pfad, {
+    x: 0, y: 0, borderColor: farbe, borderWidth: dicke,
+    borderOpacity: deckkraft, borderLineCap: PDFLib.LineCapStyle.Round,
+  });
+  pdfSeite.pushOperators(PDFLib.popGraphicsState());
 }
 async function pdfSpeichern() {
   const tab = aktuellerTab();
@@ -2602,18 +2655,21 @@ async function pdfSpeichern() {
     for (let s = 1; s <= tab.seitenAnzahl; s++) {
       const striche = tab.annotationen[s];
       if (!striche?.length) continue;
-      const vp = tab.viewports[s];
       const pdfSeite = seiten[s - 1];
-      if (!vp || !pdfSeite) continue;
-      const { width: pdfB, height: pdfH } = pdfSeite.getSize();
-      for (const strich of striche) strichInPdfZeichnen(pdfSeite, strich, vp.breite, vp.hoehe, pdfB, pdfH);
+      if (!pdfSeite) continue;
+      const ansicht = (await tab.pdfDokument.getPage(s)).getViewport({ scale: KONFIGURATION.PDF_SCALE });
+      const fx = ansicht.width / Math.floor(ansicht.width), fy = ansicht.height / Math.floor(ansicht.height);
+      const umrechnen = p => {
+        const [x, y] = ansicht.convertToPdfPoint(p.x * fx, p.y * fy);
+        return { x, y };
+      };
+      for (const strich of striche) strichInPdfZeichnen(pdfSeite, strich, umrechnen, 1 / KONFIGURATION.PDF_SCALE);
       await new Promise(resolve => setTimeout(resolve, 0));
     }
     pdfDoc.setCreator('EduLayer + Board Fusion');
     pdfDoc.setModificationDate(new Date());
     const name = `${tab.name}_${zeitstempel()}.pdf`;
-    download(await pdfDoc.save(), name);
-    toast(`Gespeichert: ${name}`, 'erfolg', 3500);
+    dateiAusgeben(await pdfDoc.save(), name, 'application/pdf');
   } catch (err) {
     console.error('[EduLayer] Speicherfehler:', err);
     toast('Fehler beim Speichern.', 'fehler', 4000);
@@ -2627,7 +2683,7 @@ async function pdfSpeichern() {
 ==================================================================== */
 function ensureAudioCtx() {
   if (!Z.audioCtx) Z.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (Z.audioCtx.state === 'suspended') Z.audioCtx.resume();
+  if (Z.audioCtx.state !== 'running') Z.audioCtx.resume(); // iOS: auch 'interrupted'
   return Z.audioCtx;
 }
 function playBeepOnce() {
@@ -2671,8 +2727,8 @@ function widgetErstellen(typ, config = {}) {
 
   let inner = '';
   if (typ === 'image') {
-    inner = `<div class="settings-panel"><input type="text" placeholder="Bild-URL..." onchange="widgetBildAktualisieren('${id}', this.value)" value="${config.val || ''}" style="width:100%"></div>
-             <img id="img-${id}" class="img-display" src="${config.val || ''}">`;
+    inner = `<div class="settings-panel"><input type="text" placeholder="Bild-URL..." onchange="widgetBildAktualisieren('${id}', this.value)" value="${escapeHtml(config.val)}" style="width:100%"></div>
+             <img id="img-${id}" class="img-display" src="${escapeHtml(config.val)}">`;
   } else if (typ === 'timer') {
     let tConf = { mode: '1', text: '', sec: 300 };
     if (config.val) { try { tConf = Object.assign(tConf, JSON.parse(config.val)); } catch (e) {} }
@@ -2682,7 +2738,7 @@ function widgetErstellen(typ, config = {}) {
           <option value="1" ${tConf.mode == '1' ? 'selected' : ''}>Nur Klingeln</option>
           <option value="2" ${tConf.mode == '2' ? 'selected' : ''}>Klingeln + Ansage</option>
         </select>
-        <input type="text" id="t-text-${id}" placeholder="Ansagetext..." value="${tConf.text || ''}" style="width:100%; margin-top:5px;">
+        <input type="text" id="t-text-${id}" placeholder="Ansagetext..." value="${escapeHtml(tConf.text)}" style="width:100%; margin-top:5px;">
       </div>
       <div class="timer-display" id="t-disp-${id}">00:00</div>
       <button class="ctrl-btn alarm-stop-btn" id="t-stop-${id}" onclick="widgetAlarmStop('${id}')">ALARM STOPPEN</button>
@@ -2692,14 +2748,15 @@ function widgetErstellen(typ, config = {}) {
         <button class="ctrl-btn" onclick="widgetTimerStart('${id}')">▶️</button>
         <button class="ctrl-btn" onclick="widgetTimerPause('${id}')">⏸️</button>
       </div>`;
-    Z.widgetTimers[id] = { sec: tConf.sec !== undefined ? tConf.sec : 300, interval: null };
+    // Läuft der Timer schon (Tabwechsel), bleibt er unangetastet
+    if (!Z.widgetTimers[id]) Z.widgetTimers[id] = { sec: tConf.sec !== undefined ? tConf.sec : 300, interval: null, ende: 0, alarm: false };
   } else if (typ === 'wheel') {
     let wConf = { names: 'Anna, Tom, Lisa', mode: 'keep' };
     if (config.val) { try { wConf = Object.assign(wConf, JSON.parse(config.val)); } catch (e) { wConf.names = config.val; } }
     inner = `<div class="winner-overlay" id="winner-overlay-${id}"><h1 id="winner-name-${id}"></h1><button class="ctrl-btn" onclick="widgetWinnerSchliessen('${id}')">OK</button></div>
-             <div class="wheel-wrap"><canvas class="wheel-canvas" id="canvas-wheel-${id}"></canvas></div>
+             <div class="wheel-wrap"><canvas class="wheel-canvas" id="canvas-wheel-${id}"></canvas><div class="wheel-zeiger" id="zeiger-${id}"></div></div>
              <div class="settings-panel">
-                <input type="text" id="wheel-names-${id}" onchange="widgetWheelInit('${id}')" value="${wConf.names}" style="width:100%">
+                <input type="text" id="wheel-names-${id}" onchange="widgetWheelInit('${id}')" value="${escapeHtml(wConf.names)}" style="width:100%">
                 <select id="wheel-mode-${id}">
                     <option value="keep" ${wConf.mode === 'keep' ? 'selected' : ''}>Behalten</option>
                     <option value="remove" ${wConf.mode === 'remove' ? 'selected' : ''}>Einmal</option>
@@ -2708,7 +2765,7 @@ function widgetErstellen(typ, config = {}) {
              </div>
              <button class="ctrl-btn" style="width:100%; background:var(--akzent); color:white;" onclick="widgetWheelSpin('${id}')">DREHEN</button>`;
   } else if (typ === 'qr') {
-    inner = `<div class="settings-panel"><input type="text" placeholder="URL..." onchange="widgetQrAktualisieren('${id}', this.value)" value="${config.val || ''}" style="width:100%"></div><img id="qr-${id}" style="width:100%" src="${config.val ? 'https://api.qrserver.com/v1/create-qr-code/?data=' + encodeURIComponent(config.val) : ''}">`;
+    inner = `<div class="settings-panel"><input type="text" placeholder="URL..." onchange="widgetQrAktualisieren('${id}', this.value)" value="${escapeHtml(config.val)}" style="width:100%"></div><img id="qr-${id}" class="qr-bild" alt="">`;
   }
 
   w.innerHTML = `
@@ -2730,8 +2787,17 @@ function widgetErstellen(typ, config = {}) {
   widgetResizeBinden(w.querySelector('[data-resize]'), w);
   w.addEventListener('pointerdown', () => widgetFokussieren(id));
 
-  if (typ === 'wheel') setTimeout(() => widgetWheelInit(id), 100);
-  if (typ === 'timer') widgetTimerAnzeigeAktualisieren(id);
+  if (typ === 'wheel') {
+    setTimeout(() => widgetWheelInit(id), 100);
+    if (window.ResizeObserver) new ResizeObserver(() => widgetZeigerSetzen(id)).observe(w.querySelector('.wheel-wrap'));
+  }
+  if (typ === 'qr') widgetQrAktualisieren(id, config.val || '');
+  if (typ === 'timer') {
+    widgetTimerAnzeigeAktualisieren(id);
+    if (Z.widgetTimers[id].alarm) document.getElementById('t-stop-' + id).style.display = 'block';
+  }
+  if (config.hidden) { w.classList.add('hidden'); document.getElementById('kg-' + id)?.classList.remove('aktiv'); }
+  autoSpeichernPlanen();
   if (config.fullsize) { w.classList.add('fullsize'); const kg = document.getElementById('kg-' + id); if (kg) kg.classList.add('fullsize'); }
   widgetFokussieren(id);
 }
@@ -2744,9 +2810,14 @@ function widgetDragBinden(header, w) {
     header.setPointerCapture(e.pointerId);
     const sX = e.clientX - w.offsetLeft, sY = e.clientY - w.offsetTop;
     const move = m => { w.style.left = (m.clientX - sX) + 'px'; w.style.top = (m.clientY - sY) + 'px'; };
-    const stop = () => { header.removeEventListener('pointermove', move); header.removeEventListener('pointerup', stop); };
+    const stop = () => {
+      header.removeEventListener('pointermove', move);
+      header.removeEventListener('pointerup', stop);
+      header.removeEventListener('pointercancel', stop);
+    };
     header.addEventListener('pointermove', move);
     header.addEventListener('pointerup', stop);
+    header.addEventListener('pointercancel', stop);
   });
 }
 function widgetResizeBinden(handle, w) {
@@ -2756,9 +2827,14 @@ function widgetResizeBinden(handle, w) {
     handle.setPointerCapture(e.pointerId);
     const sW = w.offsetWidth, sH = w.offsetHeight, sX = e.clientX, sY = e.clientY;
     const move = m => { w.style.width = (sW + (m.clientX - sX)) + 'px'; w.style.height = (sH + (m.clientY - sY)) + 'px'; };
-    const stop = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', stop); };
+    const stop = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+    };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
   });
 }
 function widgetFokussieren(id) {
@@ -2779,8 +2855,7 @@ function widgetThemeUmschalten(id) {
 function widgetEntfernen(id) {
   document.getElementById(id)?.remove();
   const kg = document.getElementById('kg-' + id); if (kg) kg.remove();
-  if (Z.widgetTimers[id]?.interval) clearInterval(Z.widgetTimers[id].interval);
-  delete Z.widgetTimers[id];
+  timerEntfernen(id);
   delete Z.wheelData[id];
 }
 function widgetZuKindergarten(id, typ) {
@@ -2794,40 +2869,101 @@ function widgetZuKindergarten(id, typ) {
   D.kindergarten.appendChild(b);
 }
 
-function widgetTimerAdj(id, d) { Z.widgetTimers[id].sec = Math.max(0, Z.widgetTimers[id].sec + d); widgetTimerAnzeigeAktualisieren(id); }
+/* Timer laufen über eine Endzeit: unabhängig vom aktiven Tab und auch
+   dann richtig, wenn iPadOS die App im Hintergrund angehalten hat. */
+function widgetTimerAdj(id, d) {
+  const t = Z.widgetTimers[id]; if (!t) return;
+  t.sec = Math.max(0, t.sec + d);
+  if (t.interval) t.ende = Date.now() + t.sec * 1000;
+  widgetTimerAnzeigeAktualisieren(id);
+}
 function widgetTimerAnzeigeAktualisieren(id) {
   const t = Z.widgetTimers[id]; if (!t) return;
   const m = Math.floor(t.sec / 60), s = t.sec % 60;
   const el = document.getElementById('t-disp-' + id);
   if (el) el.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
 }
+/** iOS erlaubt Ton und Sprache nur nach einem Antippen - hier freischalten. */
+function tonFreischalten() {
+  try {
+    const ac = ensureAudioCtx();
+    const quelle = ac.createBufferSource();
+    quelle.buffer = ac.createBuffer(1, 1, 22050);
+    quelle.connect(ac.destination); quelle.start();
+    if ('speechSynthesis' in window) {
+      const stumm = new SpeechSynthesisUtterance(' '); stumm.volume = 0;
+      window.speechSynthesis.speak(stumm);
+    }
+  } catch (_) {}
+}
 function widgetTimerStart(id) {
-  const t = Z.widgetTimers[id]; if (!t || t.interval) return;
+  const t = Z.widgetTimers[id]; if (!t || t.interval || t.sec <= 0) return;
+  tonFreischalten();
+  // Modus und Ansagetext merken: Widget ist evtl. beim Ablauf nicht sichtbar
+  const textEinlesen = () => {
+    const modeEl = document.getElementById('t-mode-' + id);
+    if (!modeEl) return;
+    t.ansage = modeEl.value === '2' ? (document.getElementById('t-text-' + id)?.value || 'Die Zeit ist abgelaufen') : '';
+  };
+  textEinlesen();
+  t.ende = Date.now() + t.sec * 1000;
   t.interval = setInterval(() => {
-    if (t.sec <= 0) { clearInterval(t.interval); t.interval = null; widgetAlarmSequenzStart(id); }
-    else { t.sec--; widgetTimerAnzeigeAktualisieren(id); }
-  }, 1000);
+    textEinlesen();
+    t.sec = Math.max(0, Math.ceil((t.ende - Date.now()) / 1000));
+    widgetTimerAnzeigeAktualisieren(id);
+    if (t.sec === 0) { clearInterval(t.interval); t.interval = null; widgetAlarmSequenzStart(id); }
+  }, 250);
 }
 function widgetTimerPause(id) { const t = Z.widgetTimers[id]; if (t) { clearInterval(t.interval); t.interval = null; } }
 function widgetAlarmSequenzStart(id) {
+  const t = Z.widgetTimers[id]; if (!t) return;
+  t.alarm = true;
   startAlarmSound();
   const stopBtn = document.getElementById('t-stop-' + id);
   if (stopBtn) stopBtn.style.display = 'block';
-  const modeEl = document.getElementById('t-mode-' + id);
-  if (modeEl && modeEl.value === '2') {
-    const txt = document.getElementById('t-text-' + id)?.value || 'Die Zeit ist abgelaufen';
-    speakAnnouncement(txt);
-  }
+  alarmKnopfAktualisieren();
+  if (t.ansage) speakAnnouncement(t.ansage);
+}
+/** Stopp-Knopf, der auch in anderen Tabs sichtbar bleibt. */
+function alarmKnopfAktualisieren() {
+  const klingelt = Object.keys(Z.widgetTimers).some(k => Z.widgetTimers[k].alarm);
+  let knopf = document.getElementById('alarm-global');
+  if (!klingelt) { knopf?.remove(); return; }
+  if (knopf) return;
+  knopf = Object.assign(document.createElement('button'), { id: 'alarm-global', textContent: '⏰ ALARM STOPPEN' });
+  knopf.onclick = () => Object.keys(Z.widgetTimers).forEach(widgetAlarmStop);
+  document.body.appendChild(knopf);
 }
 function widgetAlarmStop(id) {
-  stopAlarmSound();
-  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  const t = Z.widgetTimers[id];
+  if (t) t.alarm = false;
   const stopBtn = document.getElementById('t-stop-' + id);
   if (stopBtn) stopBtn.style.display = 'none';
+  if (!Object.keys(Z.widgetTimers).some(k => Z.widgetTimers[k].alarm)) {
+    stopAlarmSound();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  }
+  alarmKnopfAktualisieren();
+}
+function timerEntfernen(id) {
+  const t = Z.widgetTimers[id]; if (!t) return;
+  clearInterval(t.interval);
+  widgetAlarmStop(id);
+  delete Z.widgetTimers[id];
 }
 
 function widgetBildAktualisieren(id, url) { const el = document.getElementById('img-' + id); if (el) el.src = url; }
-function widgetQrAktualisieren(id, v) { const el = document.getElementById('qr-' + id); if (el) el.src = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(v)}`; }
+/** QR-Code wird direkt auf dem Gerät erzeugt (offline, nichts verlässt das iPad). */
+function widgetQrAktualisieren(id, v) {
+  const el = document.getElementById('qr-' + id); if (!el) return;
+  if (!v) { el.removeAttribute('src'); return; }
+  try {
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    const qr = qrcode(0, 'M');
+    qr.addData(v); qr.make();
+    el.src = qr.createDataURL(8, 32);
+  } catch (e) { el.removeAttribute('src'); toast('Text ist zu lang für einen QR-Code.', 'fehler'); }
+}
 
 function widgetWheelInit(id) {
   const input = document.getElementById('wheel-names-' + id)?.value || '';
@@ -2848,14 +2984,24 @@ function widgetWheelZeichnen(id) {
     ctx2.save(); ctx2.translate(400, 400); ctx2.rotate(i * arc + arc / 2);
     ctx2.fillStyle = 'white'; ctx2.font = 'bold 30px Arial'; ctx2.fillText(n.substring(0, 12), 160, 10); ctx2.restore();
   });
+  widgetZeigerSetzen(id);
+}
+/** Zeiger unten am Rad (dort wertet widgetWheelSpin den Gewinner aus). */
+function widgetZeigerSetzen(id) {
+  const c = document.getElementById('canvas-wheel-' + id), z = document.getElementById('zeiger-' + id);
+  if (!c || !z) return;
+  const radius = Math.min(c.offsetWidth, c.offsetHeight) / 2 * 0.95;
+  z.style.top = (c.offsetTop + c.offsetHeight / 2 + radius - 14) + 'px';
 }
 function widgetWheelSpin(id) {
   const data = Z.wheelData[id];
-  if (!data || data.currentNames.length === 0) return;
+  if (!data || data.dreht || data.currentNames.length === 0) return;
+  data.dreht = true;
   const extra = 1800 + Math.random() * 2000; data.angle += extra;
   const c = document.getElementById('canvas-wheel-' + id);
   if (c) c.style.transform = `rotate(${data.angle}deg)`;
   setTimeout(() => {
+    data.dreht = false;
     const deg = data.angle % 360;
     const idx = Math.floor(((360 - deg + 90) % 360) / (360 / data.currentNames.length));
     const winner = data.currentNames[idx];
@@ -2912,18 +3058,58 @@ function tafelnGesamtDokument() {
   };
 }
 
+/** Entfernt leere/defekte Einträge (stammen aus dem früheren Undo-Fehler). */
+function stricheBereinigen(liste) {
+  return Array.isArray(liste) ? liste.filter(s => s && Array.isArray(s.punkte) && s.punkte.length) : [];
+}
+
 function tafelnAusDatenErzeugen(doc) {
   const liste = (doc.tafeln || []).map(data => {
     const tab = tabErzeugenTafel(data.name);
     if (data.id) tab.id = data.id;
     tab.groesse = data.groesse || null;
-    tab.annotationen = data.annotationen || { 1: [] };
+    tab.annotationen = { 1: stricheBereinigen(data.annotationen?.[1]) };
     tab.widgets = data.widgets || [];
     tab.notiz = data.notiz || '';
     tab.bgTyp = data.bgTyp || 'none';
     return tab;
   });
+  // fortlaufende Namen, falls Daten ohne Namen kommen
   return liste.length ? liste : [tabErzeugenTafel()];
+}
+
+/* ---- Automatisches Speichern ---- */
+let autoSpeicherTimer = null;
+let autoSpeichernGesperrt = false;
+let speicherFehlerGemeldet = false;
+
+function autoSpeichernPlanen() {
+  clearTimeout(autoSpeicherTimer);
+  autoSpeicherTimer = setTimeout(() => {
+    // Nie mitten in einen Strich hinein speichern
+    if (Z.zeichnet) autoSpeichernPlanen();
+    else autoSpeichern();
+  }, 1200);
+}
+function autoSpeichern() {
+  clearTimeout(autoSpeicherTimer);
+  if (autoSpeichernGesperrt || !Z.aktiverTabId) return;
+  try {
+    localStorage.setItem(TAFELN_STORAGE_KEY, JSON.stringify(tafelnGesamtDokument()));
+    speicherFehlerGemeldet = false;
+  } catch (e) {
+    if (!speicherFehlerGemeldet) toast('Automatisches Speichern fehlgeschlagen - bitte als Datei sichern!', 'fehler', 6000);
+    speicherFehlerGemeldet = true;
+  }
+}
+function autoSpeichernInit() {
+  window.addEventListener('pagehide', autoSpeichern);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoSpeichern(); });
+  // Objekte (verschieben, Größe, Einstellungen, parken, entfernen)
+  [D.tafelWidgetsLayer, D.kindergarten].forEach(el =>
+    ['pointerup', 'click', 'change', 'input'].forEach(typ => el.addEventListener(typ, autoSpeichernPlanen)));
+  // Hintergrund
+  document.querySelectorAll('.bg-type-btn').forEach(b => b.addEventListener('click', autoSpeichernPlanen));
 }
 
 function tafelnSpeichern() {
@@ -2936,26 +3122,27 @@ function tafelnSpeichern() {
 }
 
 function tafelnExportieren() {
-  const doc = tafelnGesamtDokument();
-  const blob = new Blob([JSON.stringify(doc)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `tafeln-${zeitstempel()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
+  return dateiAusgeben(JSON.stringify(tafelnGesamtDokument()), `tafeln-${zeitstempel()}.json`, 'application/json');
 }
 
 function tafelnImportieren(datei) {
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
+    let neueTafeln;
     try {
       const parsed = JSON.parse(e.target.result);
-      if (window.confirm('Aktuelle Tafeln vorher als Datei sichern?\n\n„OK" = Ja, zuerst sichern\n„Abbrechen" = Nein, direkt ersetzen')) {
-        tafelnExportieren();
-      }
-      tafelnErsetzen(tafelnAusDatenErzeugen(parsed));
-      toast('Tafeln geladen.', 'erfolg');
-    } catch (err) { toast('Öffnen fehlgeschlagen: ungültige Datei.', 'fehler'); }
+      if (!Array.isArray(parsed?.tafeln) || !parsed.tafeln.length) throw new Error('keine Tafeln');
+      neueTafeln = tafelnAusDatenErzeugen(parsed);
+    } catch (err) { toast('Öffnen fehlgeschlagen: keine Tafel-Datei.', 'fehler'); return; }
+    if (!window.confirm('Alle aktuellen Tafeln durch die Datei ersetzen?\n\n„Abbrechen" = nichts ändern')) return;
+    // Sicherheitskopie des bisherigen Stands im Gerätespeicher
+    try { localStorage.setItem(TAFELN_STORAGE_KEY + '-vor-import', JSON.stringify(tafelnGesamtDokument())); } catch (_) {}
+    if (window.confirm('Bisherige Tafeln zusätzlich als Datei sichern?\n\n„OK" = sichern\n„Abbrechen" = ohne Datei weiter')) {
+      await tafelnExportieren();
+    }
+    tafelnErsetzen(neueTafeln);
+    autoSpeichern();
+    toast('Tafeln geladen.', 'erfolg');
   };
   reader.readAsText(datei);
 }
@@ -2966,6 +3153,7 @@ function tafelnErsetzen(neueTafeln) {
   const aktiverTab = aktuellerTab();
   const aktivWarTafel = aktiverTab && aktiverTab.type === 'tafel';
   if (aktivWarTafel) tabAbbauen(Z.aktiverTabId);
+  Object.keys(Z.widgetTimers).forEach(timerEntfernen);
 
   const pdfTabs = Z.tabs.filter(t => t.type === 'pdf');
   Z.tabs = [...neueTafeln, ...pdfTabs];
@@ -2982,16 +3170,18 @@ function tafelnErsetzen(neueTafeln) {
  *  vorhanden) direkt ins Tab-Array, OHNE sie zu aktivieren - die
  *  eigentliche Aktivierung übernimmt appStart() im Anschluss. */
 function tafelnAutoLaden() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(TAFELN_STORAGE_KEY);
+    raw = localStorage.getItem(TAFELN_STORAGE_KEY);
     if (!raw) return false;
-    const doc = JSON.parse(raw);
-    const tafeln = tafelnAusDatenErzeugen(doc);
-    if (!tafeln.length) return false;
+    const tafeln = tafelnAusDatenErzeugen(JSON.parse(raw));
     Z.tabs.push(...tafeln);
     return true;
   } catch (e) {
     console.error('[EduLayer] Tafeln laden fehlgeschlagen:', e);
+    // Unlesbaren Stand aufheben, bevor automatisch gespeichert wird
+    try { if (raw) localStorage.setItem(TAFELN_STORAGE_KEY + '-defekt', raw); }
+    catch (_) { autoSpeichernGesperrt = true; }
     return false;
   }
 }
@@ -3002,258 +3192,22 @@ function tafelnAutoLaden() {
 ==================================================================== */
 function swRegistrieren() {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', async () => {
+  const registrieren = async () => {
     try {
+      const hatteVorher = !!navigator.serviceWorker.controller;
       const reg = await navigator.serviceWorker.register('./sw.js');
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         w.addEventListener('statechange', () => {
-          if (w.state === 'installed' && navigator.serviceWorker.controller)
-            toast('Update verfügbar - Seite neu laden.', 'info', 6000);
+          if (w.state === 'installed' && hatteVorher)
+            toast('Update verfügbar - App neu öffnen.', 'info', 6000);
         });
       });
     } catch (e) { console.warn('[EduLayer] SW:', e); }
-  });
-}
-
-
-/* ===================================================================
-   🐞 TEMPORÄRE STIFT-DIAGNOSE - BEGIN
-   -------------------------------------------------------------------
-   Rein zur Fehlersuche bei "Stift reagiert manchmal nicht". Komplett
-   eigenständig, greift nirgends verändernd in die Zeichen-Engine ein
-   (nur lesend/protokollierend) und lässt sich später einfach löschen:
-   diesen ganzen Block entfernen + die 3 mit "🐞 DEBUG" markierten
-   Aufrufe in strichStarten()/strichBeenden() wieder entfernen.
-
-   ZWEI EBENEN:
-   - Ebene 1 (Capture-Listener): protokolliert JEDES pointerdown im
-     Tafel-Bereich und welches DOM-Element es zuerst empfängt - deckt
-     auf, ob z.B. ein Widget oder die Spotlight-Maske den Kontakt vor
-     dem Canvas abfängt.
-   - Ebene 2 (in strichStarten/strichBeenden): protokolliert, WARUM
-     die App einen Kontakt, der beim Canvas ankommt, trotzdem ablehnt
-     (Handballenschutz, Scroll-Modus, Fokus-Modus) oder erfolgreich
-     verarbeitet.
-==================================================================== */
-const DEBUG_STIFT_KEY = 'edulayer-debug-stift';
-const DEBUG_STIFT = { aktiv: false, log: [], maxEintraege: 150 };
-
-function debugStiftPersistieren() {
-  try {
-    localStorage.setItem(DEBUG_STIFT_KEY, JSON.stringify({ aktiv: DEBUG_STIFT.aktiv, log: DEBUG_STIFT.log }));
-  } catch (_) {}
-}
-
-/** Lädt den Diagnose-Status beim App-Start aus localStorage. Falls die
- *  Diagnose beim letzten Mal aktiv war, bleibt sie es auch nach einem
- *  (auch lautlosen) Neustart der Seite - und es wird ein deutlich
- *  sichtbarer "APP-NEUSTART"-Marker mit der Zeitlücke seit dem letzten
- *  Eintrag ins Log geschrieben. Erscheint dieser Marker genau dann,
- *  wenn ein Strich "verschwunden" ist, war die Seite in dem Moment
- *  neu geladen worden (z.B. durch iPadOS-Speicherbereinigung) - kein
- *  Routing- oder Blockade-Problem in der Zeichen-Engine mehr.
- */
-function debugStiftWiederherstellen() {
-  try {
-    const raw = localStorage.getItem(DEBUG_STIFT_KEY);
-    if (!raw) return;
-    const gespeichert = JSON.parse(raw);
-    DEBUG_STIFT.aktiv = !!gespeichert.aktiv;
-    DEBUG_STIFT.log = Array.isArray(gespeichert.log) ? gespeichert.log : [];
-    if (DEBUG_STIFT.aktiv) {
-      const letzterEintrag = DEBUG_STIFT.log[0] || '';
-      const zeitMatch = letzterEintrag.match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
-      let luecke = '(unbekannt)';
-      if (zeitMatch) {
-        const dann = new Date();
-        dann.setHours(+zeitMatch[1], +zeitMatch[2], +zeitMatch[3], +zeitMatch[4]);
-        const diffMs = Date.now() - dann.getTime();
-        if (diffMs >= 0 && diffMs < 6 * 60 * 60 * 1000) luecke = `${(diffMs / 1000).toFixed(1)}s`;
-      }
-      DEBUG_STIFT.log.unshift(`🔄🔄🔄 APP-NEUSTART ERKANNT - Lücke seit letztem Eintrag: ${luecke} 🔄🔄🔄`);
-    }
-  } catch (_) {}
-}
-
-function debugStiftLog(text, e) {
-  if (!DEBUG_STIFT.aktiv) return;
-  const jetzt = new Date();
-  const zeit = jetzt.toLocaleTimeString('de-DE', { hour12: false }) + '.' +
-    String(jetzt.getMilliseconds()).padStart(3, '0');
-  let zusatz = '';
-  if (e) {
-    const typ = e.pointerType || '?';
-    const b = e.width != null ? Math.round(e.width) : '?';
-    const h = e.height != null ? Math.round(e.height) : '?';
-    zusatz = ` [typ=${typ} b=${b} h=${h}]`;
-  }
-  DEBUG_STIFT.log.unshift(`${zeit}  ${text}${zusatz}`);
-  if (DEBUG_STIFT.log.length > DEBUG_STIFT.maxEintraege) DEBUG_STIFT.log.length = DEBUG_STIFT.maxEintraege;
-  debugStiftPersistieren();
-  debugStiftPanelAktualisieren();
-}
-
-function debugStiftElementBeschreiben(el) {
-  if (!el) return '(kein Element)';
-  if (el === document.getElementById('tafel-canvas')) return 'TAFEL-CANVAS ✅';
-  const spezifisch = el.closest?.('.widget');
-  if (spezifisch) return `WIDGET (${spezifisch.getAttribute('data-type') || '?'}, id=${spezifisch.id})`;
-  if (el.id === 'spotlight-maske') return 'SPOTLIGHT-MASKE ⚠️';
-  if (el.closest?.('.spotlight-fenster')) return 'SPOTLIGHT-FENSTER ⚠️';
-  if (el.closest?.('.geodreieck-wrapper')) return 'GEODREIECK-GRIFF';
-  if (el.closest?.('.lineal-wrapper')) return 'LINEAL-GRIFF';
-  if (el.closest?.('#sidebar, #sidebar-tabs')) return 'SIDEBAR';
-  if (el.closest?.('.flyout')) return 'FLYOUT';
-  const klasse = el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '';
-  return `${el.tagName || '?'}${el.id ? '#' + el.id : ''}${klasse}`;
-}
-
-function debugStiftCapture(e) {
-  if (!DEBUG_STIFT.aktiv) return;
-  // Bewusst OHNE Koordinaten-Filter (auch außerhalb der Tafel loggen) -
-  // ein Filter könnte selbst der Grund sein, warum echte Events im Log
-  // nicht auftauchen.
-  debugStiftLog(`pointerdown empfangen von: ${debugStiftElementBeschreiben(e.target)}`, e);
-}
-
-function debugStiftHerzschlagStarten() {
-  let letzterSchlag = performance.now();
-  setInterval(() => {
-    const jetzt = performance.now();
-    const delta = jetzt - letzterSchlag;
-    // Erwartet werden ~500ms zwischen den Schlägen. Alles deutlich
-    // darüber bedeutet: der Haupt-Thread war blockiert/beschäftigt und
-    // konnte diesen Timer-Tick nicht rechtzeitig ausführen - GENAU DAS
-    // kann iPadOS dazu bringen, einen neuen Stift-Kontakt gar nicht erst
-    // als Pointer-Event an die Seite auszuliefern.
-    if (DEBUG_STIFT.aktiv && delta > 800) {
-      debugStiftLog(`⏱️⚠️ HAUPT-THREAD-STILLSTAND: ${Math.round(delta)}ms (erwartet ~500ms)`);
-    }
-    letzterSchlag = jetzt;
-  }, 500);
-}
-
-/** Wird per Knopfdruck manuell ausgelöst, GENAU dann, wenn gerade ein
- *  Strich nicht reagiert hat. Nimmt einen kompletten Schnappschuss des
- *  aktuellen Zustands auf - unabhängig davon, ob automatisch irgendwo
- *  im Ereignis-Fluss etwas protokolliert wurde. */
-function debugStiftSnapshot() {
-  const canvas = D.tafelCanvas;
-  const rect = canvas.getBoundingClientRect();
-  const computed = window.getComputedStyle(canvas);
-  let hatCapture = 'unbekannt';
-  try { hatCapture = Z.aktiverPointerId !== null ? canvas.hasPointerCapture(Z.aktiverPointerId) : '(kein aktiverPointerId)'; } catch (err) { hatCapture = 'Fehler: ' + err.message; }
-
-  const zeilen = [
-    '📸 SNAPSHOT ausgelöst',
-    `  Z.zeichnet = ${Z.zeichnet}`,
-    `  Z.aktiverPointerId = ${Z.aktiverPointerId}`,
-    `  Z.werkzeug = ${Z.werkzeug}`,
-    `  Z.modus = ${Z.modus}`,
-    `  Z.fokusModus = ${Z.fokusModus}`,
-    `  Z.nurStiftZeichnet = ${Z.nurStiftZeichnet}`,
-    `  hasPointerCapture(aktiverPointerId) = ${hatCapture}`,
-    `  canvas.getBoundingClientRect = ${JSON.stringify({ x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) })}`,
-    `  computed pointer-events = ${computed.pointerEvents}`,
-    `  computed touch-action = ${computed.touchAction}`,
-    `  computed display/visibility = ${computed.display} / ${computed.visibility}`,
-    `  aktiver Tab-Typ = ${aktuellerTab()?.type}`,
-    `  offene Widgets = ${D.tafelWidgetsLayer.querySelectorAll('.widget').length}`,
-    `  Geodreieck aktiv = ${Z.geodreieckAktiv}, Lineal aktiv = ${Z.linealAktiv}`,
-    `  Spotlight-Overlay display = ${D.spotlightOverlay.style.display || '(leer/none)'}`,
-  ];
-  zeilen.forEach(z => { DEBUG_STIFT.log.unshift(z); });
-  if (DEBUG_STIFT.log.length > DEBUG_STIFT.maxEintraege) DEBUG_STIFT.log.length = DEBUG_STIFT.maxEintraege;
-  debugStiftPersistieren();
-  debugStiftPanelAktualisieren();
-}
-
-function debugStiftPanelBauen() {
-  debugStiftWiederherstellen(); // 🐞 DEBUG: Zustand/Log von vor einem evtl. Neustart laden
-  const btn = document.createElement('button');
-  btn.textContent = '🐞';
-  btn.title = 'Stift-Diagnose ein/aus';
-  Object.assign(btn.style, {
-    position: 'fixed', left: '10px', bottom: '10px', zIndex: 99999,
-    width: '40px', height: '40px', borderRadius: '50%', border: 'none',
-    background: '#222', color: '#fff', fontSize: '18px', opacity: '0.55',
-    touchAction: 'manipulation',
-  });
-
-  const panel = document.createElement('div');
-  Object.assign(panel.style, {
-    position: 'fixed', left: '10px', bottom: '58px', zIndex: 99999,
-    width: 'min(94vw, 480px)', maxHeight: '46vh', overflowY: 'auto',
-    background: 'rgba(10,10,14,0.94)', color: '#8dffa0',
-    fontFamily: 'ui-monospace, monospace', fontSize: '11px',
-    lineHeight: '1.5', padding: '8px 10px', borderRadius: '10px',
-    display: 'none', whiteSpace: 'pre-wrap', touchAction: 'pan-y',
-    border: '1px solid #444',
-  });
-
-  const kopf = document.createElement('div');
-  Object.assign(kopf.style, {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: '6px', color: '#fff', fontWeight: 'bold',
-  });
-  kopf.innerHTML = `<span>🐞 Stift-Diagnose</span>`;
-  const btnSnapshot = document.createElement('button');
-  btnSnapshot.textContent = '📸 Jetzt!';
-  Object.assign(btnSnapshot.style, { background: '#c41c1c', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontWeight: 'bold' });
-  btnSnapshot.onclick = () => debugStiftSnapshot();
-  const btnLeeren = document.createElement('button');
-  btnLeeren.textContent = 'Leeren';
-  Object.assign(btnLeeren.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 8px', marginLeft: '6px' });
-  btnLeeren.onclick = () => { DEBUG_STIFT.log = []; debugStiftPersistieren(); debugStiftPanelAktualisieren(); };
-  const btnSchliessen = document.createElement('button');
-  btnSchliessen.textContent = '×';
-  Object.assign(btnSchliessen.style, { background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 10px', marginLeft: '6px' });
-  btnSchliessen.onclick = () => { panel.style.display = 'none'; };
-  const rechts = document.createElement('div');
-  rechts.appendChild(btnSnapshot); rechts.appendChild(btnLeeren); rechts.appendChild(btnSchliessen);
-  kopf.appendChild(rechts);
-
-  const inhalt = document.createElement('div');
-  inhalt.id = 'debug-stift-inhalt';
-
-  panel.appendChild(kopf);
-  panel.appendChild(inhalt);
-
-  // Zustand von vor einem evtl. Neustart übernehmen (Knopf + Panel
-  // sofort im richtigen Zustand zeigen, nicht erst nach erneutem Tippen).
-  if (DEBUG_STIFT.aktiv) {
-    btn.style.opacity = '1'; btn.style.background = '#c41c1c';
-    panel.style.display = 'block';
-    debugStiftPanelAktualisieren();
-  }
-
-  btn.onclick = () => {
-    DEBUG_STIFT.aktiv = !DEBUG_STIFT.aktiv;
-    btn.style.opacity = DEBUG_STIFT.aktiv ? '1' : '0.55';
-    btn.style.background = DEBUG_STIFT.aktiv ? '#c41c1c' : '#222';
-    panel.style.display = DEBUG_STIFT.aktiv ? 'block' : 'none';
-    debugStiftPersistieren();
-    if (DEBUG_STIFT.aktiv) debugStiftLog('--- Diagnose gestartet ---');
   };
-
-  document.body.appendChild(panel);
-  document.body.appendChild(btn);
-
-  // Capture-Phase: läuft VOR allen anderen Handlern, sieht also auch
-  // Kontakte, die von anderen Elementen mit stopPropagation() sonst
-  // "verschluckt" würden.
-  document.addEventListener('pointerdown', debugStiftCapture, true);
+  if (document.readyState === 'complete') registrieren();
+  else window.addEventListener('load', registrieren);
 }
-
-function debugStiftPanelAktualisieren() {
-  const el = document.getElementById('debug-stift-inhalt');
-  if (!el) return;
-  el.textContent = DEBUG_STIFT.log.join('\n');
-}
-/* ===================================================================
-   🐞 TEMPORÄRE STIFT-DIAGNOSE - ENDE
-==================================================================== */
 
 
 /* ===================================================================
@@ -3278,10 +3232,10 @@ function appStart() {
   spotlightInit();
   geodreieckInit();
   linealInit();
+  // Falls das Bild schon vor dem Laden dieses Skripts gescheitert ist
+  if (D.geoBild.tagName === 'IMG' && D.geoBild.complete && !D.geoBild.naturalWidth) geoImgFallback(D.geoBild);
   zoomInit();
   neueTafelInit();
-  debugStiftPanelBauen(); // 🐞 DEBUG
-  debugStiftHerzschlagStarten(); // 🐞 DEBUG
 
   // Zeichen-Listener für die Tafel-Canvas werden EINMALIG gebunden,
   // da es sich um ein persistentes, wiederverwendetes Element handelt
@@ -3292,6 +3246,9 @@ function appStart() {
   farbeWaehlen(KONFIGURATION.STANDARD_FARBE);
 
   swRegistrieren();
+  autoSpeichernInit();
+  // Bittet den Browser, den Gerätespeicher nicht eigenmächtig zu löschen
+  navigator.storage?.persist?.();
 
   // Gespeicherte Tafeln automatisch laden (wie Klassenzimmer-Board);
   // PDF-Tabs werden bewusst NICHT automatisch wiederhergestellt (wie
